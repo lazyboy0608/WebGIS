@@ -1,0 +1,19 @@
+# ============================================
+# SEG-Y Processing Service
+# Runtime Dependencies
+# ============================================
+
+# SEG-Y file reader
+segyio>=1.9,<2.0
+
+# Numerical processing
+numpy>=1.26,<3.0
+
+# Coordinate reference system transformation
+pyproj>=3.7,<4.0
+
+# Geometry processing
+shapely>=2.0,<3.0
+
+# FastAPI multipart file uploads
+python-multipart>=0.0.9,<1.0

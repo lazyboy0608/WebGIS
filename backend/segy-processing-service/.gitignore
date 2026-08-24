@@ -1,0 +1,52 @@
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# MyPy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Environment
+.env
+.env.*
+
+# Runtime data
+data/input/*
+data/output/*
+*.sgy
+*.segy
+
+# Keep sample directory structure
+!data/input/.gitkeep
+!data/output/.gitkeep
+!data/samples/
+
+# Environments
+.env
+
+# Project specific list files
+project-tree-*.txt
+
+# IDE & System files
+.vscode/
+.idea/
+.DS_Store
+*.log
