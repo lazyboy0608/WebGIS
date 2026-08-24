@@ -5,13 +5,16 @@
 - Đã cài đặt các thư viện Python: pip, segyio, fastapi, alembic,....
 
 # Các bước cài đặt chương trình
-1. Clone dự án
+## 1. Clone dự án
+
+```bash
 git clone <repository_url>
 cd WebGIS
+```
 
 ________________________________
 
-2. Cài đặt Backend
+## 2. Cài đặt Backend
 
 2.1. Backend 1
 
@@ -40,7 +43,7 @@ DATABASE_URL=postgresql+psycopg://postgres:<your_password>@localhost:5432/webgis
 
 _________________________________
 
-3. Cài đặt Database
+## 3. Cài đặt Database
 
 ```text
 Tạo cơ sở dữ liệu mới:
@@ -52,16 +55,16 @@ alembic upgrade head
 
 __________________________________
 
-4. Hướng dẫn chạy project
+## 4. Hướng dẫn chạy project
 
-## Terminal 1: Backend 1 (segy-processing-service)
+### Terminal 1: Backend 1 (segy-processing-service)
 
 ```bash
 cd backend
 cd segy-processing-service
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-## Terminal 2: Backend 2 (data-serving)
+### Terminal 2: Backend 2 (data-serving)
 
 ```bash
 cd backend
@@ -69,7 +72,7 @@ cd data-serving
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
-## Terminal 3: Frontend
+### Terminal 3: Frontend
 
 ```bash
 cd frontend
