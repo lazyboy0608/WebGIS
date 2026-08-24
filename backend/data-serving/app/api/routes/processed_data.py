@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -125,6 +127,24 @@ def get_processed_traces(
     try:
         payload = service.traces(file_id, line_id=line_id, bbox=bbox, offset=offset, limit=limit)
     except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return GeoJSONFeatureCollection.model_validate(payload)
+
+
+@router.post("/{file_id}/processed/lines/clip", response_model=GeoJSONFeatureCollection)
+def clip_processed_lines(
+    file_id: int,
+    polygon: dict[str, Any],
+    line_id: int | None = Query(default=None, ge=1),
+    service: ProcessedDataQueryService = Depends(get_query_service),
+) -> GeoJSONFeatureCollection:
+    ensure_file_exists(file_id, service)
+    try:
+        payload = service.clip_lines_by_polygon(file_id, polygon_geojson=polygon, line_id=line_id)
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),

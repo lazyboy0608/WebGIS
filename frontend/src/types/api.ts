@@ -46,3 +46,9 @@ export type LayerData = {
   shotPoints: GeoJSONFeatureCollection
   traces: GeoJSONFeatureCollection
 }
+
+export type BatchDeleteResponse = {
+  deleted_ids: number[]
+  count: number
+}
+

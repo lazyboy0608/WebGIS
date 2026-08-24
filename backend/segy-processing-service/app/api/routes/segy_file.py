@@ -18,6 +18,8 @@ from app.api.dependencies import (
 )
 from app.api.schemas.segy_file import (
     ProcessedPointResponse,
+    SegyBatchDeleteRequest,
+    SegyBatchDeleteResponse,
     SegyFileCreate,
     SegyFileResponse,
     SegyFileUpdate,
@@ -384,3 +386,23 @@ def delete_segy_file(
         )
 
     service.delete_file(file_id)
+
+
+@router.post(
+    "/batch-delete",
+    response_model=SegyBatchDeleteResponse,
+)
+@router.delete(
+    "/batch",
+    response_model=SegyBatchDeleteResponse,
+)
+def batch_delete_segy_files(
+    payload: SegyBatchDeleteRequest,
+    service: SegyFileService = Depends(get_segy_file_service),
+) -> SegyBatchDeleteResponse:
+    deleted_ids = service.delete_files(payload.ids)
+    return SegyBatchDeleteResponse(
+        deleted_ids=deleted_ids,
+        count=len(deleted_ids),
+    )
+

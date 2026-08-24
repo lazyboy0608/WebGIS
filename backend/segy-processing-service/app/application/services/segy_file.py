@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.domain.interfaces.repositories.segy_file_repository import (
     SegyFileRepository,
 )
@@ -32,7 +34,29 @@ class SegyFileService:
         return self.repository.update(segy_file)
 
     def delete_file(self, file_id: int) -> None:
-        self.repository.delete(file_id)
+        segy_file = self.repository.get_by_id(file_id)
+        if segy_file is not None:
+            if self.file_storage is not None and segy_file.file_path:
+                try:
+                    self.file_storage.delete(Path(segy_file.file_path))
+                except Exception:
+                    pass
+            self.repository.delete(file_id)
+
+    def delete_files(self, file_ids: list[int]) -> list[int]:
+        deleted_ids: list[int] = []
+        for file_id in file_ids:
+            segy_file = self.repository.get_by_id(file_id)
+            if segy_file is not None:
+                if self.file_storage is not None and segy_file.file_path:
+                    try:
+                        self.file_storage.delete(Path(segy_file.file_path))
+                    except Exception:
+                        pass
+                self.repository.delete(file_id)
+                deleted_ids.append(file_id)
+        return deleted_ids
 
     def find_files_intersecting_polygon(self, polygon) -> list[SegyFile]:
         return self.repository.intersects_polygon(polygon)
+

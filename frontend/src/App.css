@@ -21,4 +21,42 @@ select { width: 100%; padding: 13px 10px; border: 1px solid #bfcac4; border-radi
 .map-panel { position: relative; min-height: 610px; overflow: hidden; background: #dbe7df; }.map { width: 100%; height: 100%; min-height: 610px; }.map-empty { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; gap: 8px; background: rgba(244,241,233,.8); pointer-events: none; }.map-empty span { font-size: 55px; color: var(--orange); line-height: .5; }.map-empty strong { font-size: 17px; }.map-empty small, .loading, .error { color: var(--muted); font: 12px 'DM Mono', monospace; }.loading, .error { position: absolute; top: 18px; right: 18px; padding: 9px 11px; background: var(--panel); border: 1px solid var(--line); }.error { color: #a33c27; }.map-legend { position: absolute; left: 18px; bottom: 18px; display: flex; gap: 12px; padding: 9px 11px; background: rgba(255,253,248,.92); border: 1px solid var(--line); font: 11px 'DM Mono', monospace; }.map-legend span { display: flex; align-items: center; gap: 5px; }.map-legend i { display: inline-block; width: 16px; height: 4px; }.line-key { background: var(--orange); }.point-key, .trace-key { width: 8px !important; height: 8px !important; border-radius: 50%; background: var(--teal); }.trace-key { background: #f3a712; }
 .line-tooltip { position: absolute; z-index: 10; min-width: 205px; padding: 12px; border: 1px solid #b9c7c0; border-left: 3px solid var(--orange); background: rgba(255,253,248,.96); box-shadow: 4px 5px 0 rgba(23,35,38,.12); pointer-events: none; transform: translate(0, 0); }.tooltip-kicker { display: block; color: var(--muted); font: 10px 'DM Mono', monospace; letter-spacing: 1px; }.line-tooltip strong { display: block; margin: 4px 0 9px; font-size: 16px; }.tooltip-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 12px; color: var(--muted); font: 10px 'DM Mono', monospace; }.tooltip-grid b { display: block; margin-top: 2px; color: var(--ink); font-size: 11px; font-weight: 500; }
 .summary { padding: 18px 0 2px; align-items: end; }.summary strong { display: block; margin-top: 7px; font-size: 18px; }.metrics { display: flex; gap: 26px; color: var(--muted); font: 12px 'DM Mono', monospace; }.metrics b { color: var(--ink); font-size: 18px; margin-right: 4px; }
-@media (max-width: 720px) { .shell { padding: 18px 14px; gap: 14px; }.workspace { grid-template-columns: 1fr; box-shadow: 5px 5px 0 #dfe5df; }.sidebar { border-right: 0; border-bottom: 1px solid var(--line); }.map-panel, .map { min-height: 440px; }.summary, .metrics { flex-direction: column; align-items: flex-start; gap: 10px; }.connection { display: none; } }
+.surveys-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+.surveys-actions { display: flex; gap: 6px; }
+.action-link { background: none; border: none; padding: 0; color: var(--muted); font: 500 10px 'DM Mono', monospace; text-transform: uppercase; cursor: pointer; text-decoration: underline; }
+.action-link:hover { color: var(--ink); }
+
+.delete-button { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 10px 10px; margin-top: 6px; border: 1px solid #d9534f; border-radius: 2px; background: #fff5f5; color: #c9302c; cursor: pointer; font: 500 12px 'Space Grotesk', sans-serif; transition: all .2s; }
+.delete-button:hover:not(:disabled) { background: #d9534f; color: white; transform: translateY(-1px); }
+.delete-button:disabled { opacity: .5; cursor: not-allowed; }
+
+.modal-backdrop { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(23, 35, 38, 0.5); backdrop-filter: blur(2px); animation: fadeIn 0.15s ease-out; }
+.modal-box { width: 90%; max-width: 440px; padding: 24px; background: var(--panel); border: 1px solid var(--line); box-shadow: 8px 8px 0 rgba(23, 35, 38, 0.2); }
+.modal-box h3 { margin: 0 0 10px; font-size: 20px; color: #c9302c; }
+.modal-box p { margin: 0 0 14px; font-size: 14px; line-height: 1.4; color: var(--ink); }
+.modal-file-list { max-height: 120px; overflow-y: auto; margin: 0 0 18px; padding: 10px 12px; background: #f4f1e9; border: 1px solid var(--line); font: 12px 'DM Mono', monospace; list-style: none; }
+.modal-file-list li { margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.modal-file-list li:last-child { margin-bottom: 0; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.btn-cancel { padding: 9px 16px; border: 1px solid var(--line); background: white; color: var(--ink); font: 13px 'Space Grotesk', sans-serif; cursor: pointer; border-radius: 2px; }
+.btn-cancel:hover { background: #eaeaee; }
+.btn-delete-confirm { padding: 9px 16px; border: 1px solid #c9302c; background: #c9302c; color: white; font: 500 13px 'Space Grotesk', sans-serif; cursor: pointer; border-radius: 2px; }
+.btn-delete-confirm:hover { background: #a92522; }
+.btn-delete-confirm:disabled { opacity: 0.6; cursor: wait; }
+
+.btn-draw-polygon, .btn-clear-polygon { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 11px 10px; border-radius: 2px; font: 500 13px 'Space Grotesk', sans-serif; cursor: pointer; transition: all .2s; }
+.btn-draw-polygon { border: 1px solid var(--teal); background: #f0f7f8; color: var(--teal); }
+.btn-draw-polygon:hover { background: var(--teal); color: white; transform: translateY(-1px); }
+.btn-draw-polygon.is-active { border-color: #0284c7; background: #0284c7; color: white; box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2); }
+.btn-clear-polygon { border: 1px solid #708083; background: #f4f1e9; color: var(--ink); }
+.btn-clear-polygon:hover { background: #e2ded5; transform: translateY(-1px); }
+.btn-draw-polygon b, .btn-clear-polygon b { font-size: 16px; font-weight: 400; line-height: 12px; }
+
+.drawing-hint { display: block; margin-top: 4px; color: #0284c7; font: 10px 'DM Mono', monospace; line-height: 1.4; background: #e0f2fe; padding: 6px 8px; border-left: 2px solid #0284c7; }
+
+.line-inside-key { background: #0284c7 !important; }
+.line-outside-key { background: #dc2626 !important; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+

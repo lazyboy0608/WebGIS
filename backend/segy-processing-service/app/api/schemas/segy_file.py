@@ -64,6 +64,19 @@ class SegyUploadBatchResponse(BaseModel):
     files: list[SegyProcessingResponse]
 
 
+class SegyBatchDeleteRequest(BaseModel):
+    """Request schema for batch deleting SEG-Y files."""
+
+    ids: list[int] = Field(..., description="List of SEG-Y file IDs to delete")
+
+
+class SegyBatchDeleteResponse(BaseModel):
+    """Response schema after batch deleting SEG-Y files."""
+
+    deleted_ids: list[int]
+    count: int
+
+
 class ProcessedPointResponse(BaseModel):
     """A processed trace coordinate ready for a WebGIS client."""
 
@@ -72,3 +85,4 @@ class ProcessedPointResponse(BaseModel):
     x: float
     y: float
     srid: int = 4326
+

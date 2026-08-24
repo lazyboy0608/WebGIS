@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useState } from 'react'
 import type {
+  BatchDeleteResponse,
   FileListItem,
   FileListResponse,
   GeoJSONFeatureCollection,
@@ -48,6 +49,7 @@ export function useSeismicData(fileIds: number[]) {
   const [layers, setLayers] = useState<LayerData | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filesRefreshToken, setFilesRefreshToken] = useState(0)
 
@@ -152,5 +154,32 @@ export function useSeismicData(fileIds: number[]) {
     return () => controller.abort()
   }, [fileIds.join(',')])
 
-  return { apiBaseUrl: API_BASE_URL, files, summary, layers, loading, uploading, error, uploadFiles }
+  async function deleteFiles(targetFileIds: number[]): Promise<number[]> {
+    if (targetFileIds.length === 0) return []
+    setDeleting(true)
+    setError(null)
+    try {
+      const response = await fetch(`${PROCESSING_API_BASE_URL}/api/segy-files/batch-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: targetFileIds }),
+      })
+      if (!response.ok) {
+        throw new Error(`Backend 1 từ chối xóa dữ liệu (${response.status})`)
+      }
+      const result = await response.json() as BatchDeleteResponse
+      setFilesRefreshToken((token) => token + 1)
+      return result.deleted_ids
+    } catch (reason) {
+      const message = reason instanceof TypeError
+        ? `Không thể kết nối Backend 1 tại ${PROCESSING_API_BASE_URL}`
+        : reason instanceof Error ? reason.message : 'Không thể xóa file SEG-Y'
+      setError(message)
+      throw reason
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return { apiBaseUrl: API_BASE_URL, files, summary, layers, loading, uploading, deleting, error, uploadFiles, deleteFiles }
 }

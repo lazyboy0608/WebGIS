@@ -31,8 +31,14 @@ def test_extract_source_crs_accepts_case_insensitive_epsg() -> None:
     assert extract_source_crs(metadata) == "EPSG:26782"
 
 
-def test_extract_source_crs_requires_epsg_code() -> None:
+def test_extract_source_crs_falls_back_to_default_when_no_epsg() -> None:
+    metadata = make_metadata("Projection: WGS 84 / UTM zone 5N")
+
+    assert extract_source_crs(metadata) == "EPSG:26782"
+
+
+def test_extract_source_crs_requires_epsg_code_when_default_disabled() -> None:
     metadata = make_metadata("Projection: WGS 84 / UTM zone 5N")
 
     with pytest.raises(ValueError, match="No EPSG code found"):
-        extract_source_crs(metadata)
+        extract_source_crs(metadata, default_crs=None)

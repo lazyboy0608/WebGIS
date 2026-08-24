@@ -337,3 +337,59 @@ class ProcessedDataQueryService:
             )
 
         return feature_collection(features)
+
+    def clip_lines_by_polygon(
+        self,
+        file_id: int,
+        polygon_geojson: dict[str, Any],
+        line_id: int | None = None,
+    ) -> dict[str, Any]:
+        import math
+        from shapely.geometry import shape
+        from shapely.ops import transform
+
+        def lonlat_to_3857(x: float, y: float) -> tuple[float, float]:
+            r_major = 6378137.0
+            x_m = r_major * math.radians(x)
+            lat = max(min(y, 89.5), -89.5)
+            y_m = r_major * math.log(math.tan(math.pi / 4.0 + math.radians(lat) / 2.0))
+            return x_m, y_m
+
+        def m3857_to_lonlat(x: float, y: float) -> tuple[float, float]:
+            r_major = 6378137.0
+            lon = math.degrees(x / r_major)
+            lat = math.degrees(2.0 * math.atan(math.exp(y / r_major)) - math.pi / 2.0)
+            return lon, lat
+
+        poly_shape_4326 = shape(polygon_geojson)
+        poly_shape_3857 = transform(lambda x, y, *a: lonlat_to_3857(x, y), poly_shape_4326)
+
+        lines_collection = self.lines(file_id, line_id=line_id, limit=10000)
+
+        out_features: list[dict[str, Any]] = []
+        for feat in lines_collection.get("features", []):
+            if not feat.get("geometry"):
+                continue
+            line_geom_4326 = shape(feat["geometry"])
+            line_geom_3857 = transform(lambda x, y, *a: lonlat_to_3857(x, y), line_geom_4326)
+
+            inside_3857 = line_geom_3857.intersection(poly_shape_3857)
+            outside_3857 = line_geom_3857.difference(poly_shape_3857)
+
+            if not inside_3857.is_empty:
+                inside_4326 = transform(lambda x, y, *a: m3857_to_lonlat(x, y), inside_3857)
+                out_features.append({
+                    "type": "Feature",
+                    "geometry": geometry_to_geojson(inside_4326),
+                    "properties": {**feat["properties"], "is_inside": True},
+                })
+
+            if not outside_3857.is_empty:
+                outside_4326 = transform(lambda x, y, *a: m3857_to_lonlat(x, y), outside_3857)
+                out_features.append({
+                    "type": "Feature",
+                    "geometry": geometry_to_geojson(outside_4326),
+                    "properties": {**feat["properties"], "is_inside": False},
+                })
+
+        return feature_collection(out_features)
