@@ -11,6 +11,7 @@ from fastapi import (
 )
 
 from app.api.dependencies import (
+    get_current_user_id,
     get_file_storage,
     get_processed_data_query_service,
     get_process_segy_file_use_case,
@@ -89,6 +90,7 @@ async def _upload_and_process(
     query_service: ProcessedDataQueryService,
     use_case: ProcessSegyFileUseCase,
     file_storage: LocalFileStorage,
+    user_id: int | None = None,
     stored_paths: list[Path] | None = None,
 ) -> SegyProcessingResponse:
     if not file.filename:
@@ -133,6 +135,7 @@ async def _upload_and_process(
         segy_file = service.create_file(
             SegyFile(
                 id=None,
+                user_id=user_id,
                 filename=filename,
                 file_path=str(stored_path),
                 file_size=stored_path.stat().st_size,
@@ -165,6 +168,7 @@ async def _upload_and_process(
 async def upload_and_process_segy_file(
     file: UploadFile = File(...),
     source_crs: str | None = Form(None),
+    current_user_id: int | None = Depends(get_current_user_id),
     service: SegyFileService = Depends(get_segy_file_service),
     query_service: ProcessedDataQueryService = Depends(
         get_processed_data_query_service,
@@ -181,6 +185,7 @@ async def upload_and_process_segy_file(
         query_service,
         use_case,
         file_storage,
+        user_id=current_user_id,
     )
 
 
@@ -192,6 +197,7 @@ async def upload_and_process_segy_file(
 async def upload_and_process_segy_files(
     files: list[UploadFile] = File(...),
     source_crs: str | None = Form(None),
+    current_user_id: int | None = Depends(get_current_user_id),
     service: SegyFileService = Depends(get_segy_file_service),
     query_service: ProcessedDataQueryService = Depends(
         get_processed_data_query_service,
@@ -219,7 +225,8 @@ async def upload_and_process_segy_files(
                     query_service,
                     use_case,
                     file_storage,
-                    stored_paths,
+                    user_id=current_user_id,
+                    stored_paths=stored_paths,
                 )
             )
     except Exception:

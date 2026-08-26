@@ -27,86 +27,85 @@ class ProcessedDataQueryService:
         self._cache[key] = (now, value)
         return value
 
-    def file_exists(self, file_id: int) -> bool:
+    def file_exists(self, file_id: int, user_id: int | None = None) -> bool:
         from app.models import SegyFileModel
 
-        return (
-            self.session.execute(
-                select(SegyFileModel.id).where(SegyFileModel.id == file_id)
-            ).first()
-            is not None
-        )
+        stmt = select(SegyFileModel.id).where(SegyFileModel.id == file_id)
+        if user_id is not None:
+            stmt = stmt.where(
+                (SegyFileModel.user_id == user_id) | (SegyFileModel.user_id.is_(None))
+            )
+        return self.session.execute(stmt).first() is not None
 
-    def list_files(self, offset: int = 0, limit: int = 50) -> dict[str, Any]:
+    def list_files(self, offset: int = 0, limit: int = 50, user_id: int | None = None) -> dict[str, Any]:
         from app.models import SegyFileModel, SeismicLineModel, SeismicShotPointModel, SeismicTraceModel
 
-        def load() -> dict[str, Any]:
-            total = self.session.execute(
-                select(func.count()).select_from(SegyFileModel)
+        count_stmt = select(func.count()).select_from(SegyFileModel)
+        select_stmt = select(
+            SegyFileModel.id,
+            SegyFileModel.filename,
+            SegyFileModel.source_crs,
+            SegyFileModel.trace_count,
+            SegyFileModel.line_count,
+        ).order_by(SegyFileModel.id).offset(offset).limit(limit)
+
+        if user_id is not None:
+            count_stmt = count_stmt.where(SegyFileModel.user_id == user_id)
+            select_stmt = select_stmt.where(SegyFileModel.user_id == user_id)
+
+        total = self.session.execute(count_stmt).scalar_one()
+        rows = self.session.execute(select_stmt).all()
+
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            file_id, filename, source_crs, trace_count, line_count = row
+            processed_line_count = self.session.execute(
+                select(func.count()).select_from(SeismicLineModel).where(SeismicLineModel.segy_file_id == file_id)
+            ).scalar_one()
+            processed_shot_point_count = self.session.execute(
+                select(func.count()).select_from(SeismicShotPointModel).where(SeismicShotPointModel.segy_file_id == file_id)
+            ).scalar_one()
+            processed_trace_count = self.session.execute(
+                select(func.count()).select_from(SeismicTraceModel).where(SeismicTraceModel.segy_file_id == file_id)
             ).scalar_one()
 
-            rows = self.session.execute(
-                select(
-                    SegyFileModel.id,
-                    SegyFileModel.filename,
-                    SegyFileModel.source_crs,
-                    SegyFileModel.trace_count,
-                    SegyFileModel.line_count,
-                )
-                .order_by(SegyFileModel.id)
-                .offset(offset)
-                .limit(limit)
-            ).all()
+            items.append(
+                {
+                    "id": file_id,
+                    "filename": filename,
+                    "source_crs": source_crs,
+                    "trace_count": trace_count,
+                    "line_count": line_count,
+                    "processed_line_count": processed_line_count,
+                    "processed_shot_point_count": processed_shot_point_count,
+                    "processed_trace_count": processed_trace_count,
+                    "has_processed_data": processed_line_count > 0 or processed_trace_count > 0,
+                }
+            )
 
-            items: list[dict[str, Any]] = []
-            for row in rows:
-                file_id, filename, source_crs, trace_count, line_count = row
-                processed_line_count = self.session.execute(
-                    select(func.count()).select_from(SeismicLineModel).where(SeismicLineModel.segy_file_id == file_id)
-                ).scalar_one()
-                processed_shot_point_count = self.session.execute(
-                    select(func.count()).select_from(SeismicShotPointModel).where(SeismicShotPointModel.segy_file_id == file_id)
-                ).scalar_one()
-                processed_trace_count = self.session.execute(
-                    select(func.count()).select_from(SeismicTraceModel).where(SeismicTraceModel.segy_file_id == file_id)
-                ).scalar_one()
+        return {
+            "items": items,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
 
-                items.append(
-                    {
-                        "id": file_id,
-                        "filename": filename,
-                        "source_crs": source_crs,
-                        "trace_count": trace_count,
-                        "line_count": line_count,
-                        "processed_line_count": processed_line_count,
-                        "processed_shot_point_count": processed_shot_point_count,
-                        "processed_trace_count": processed_trace_count,
-                        "has_processed_data": processed_line_count > 0 or processed_trace_count > 0,
-                    }
-                )
-
-            return {
-                "items": items,
-                "total": total,
-                "offset": offset,
-                "limit": limit,
-            }
-
-        return load()
-
-    def summary(self, file_id: int) -> dict[str, Any] | None:
+    def summary(self, file_id: int, user_id: int | None = None) -> dict[str, Any] | None:
         from app.models import SegyFileModel, SeismicLineModel, SeismicShotPointModel, SeismicTraceModel
 
         def load() -> dict[str, Any] | None:
-            row = self.session.execute(
-                select(
-                    SegyFileModel.id,
-                    SegyFileModel.filename,
-                    SegyFileModel.source_crs,
-                    SegyFileModel.trace_count,
-                    SegyFileModel.line_count,
-                ).where(SegyFileModel.id == file_id)
-            ).first()
+            stmt = select(
+                SegyFileModel.id,
+                SegyFileModel.filename,
+                SegyFileModel.source_crs,
+                SegyFileModel.trace_count,
+                SegyFileModel.line_count,
+            ).where(SegyFileModel.id == file_id)
+            if user_id is not None:
+                stmt = stmt.where(
+                    (SegyFileModel.user_id == user_id) | (SegyFileModel.user_id.is_(None))
+                )
+            row = self.session.execute(stmt).first()
 
             if row is None:
                 return None

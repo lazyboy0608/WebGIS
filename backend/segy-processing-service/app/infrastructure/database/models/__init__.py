@@ -1,3 +1,4 @@
+from app.infrastructure.database.models.user_model import UserModel
 from app.infrastructure.database.models.segy_file_model import (
     SegyFileModel,
 )
@@ -14,5 +15,6 @@ from app.infrastructure.database.models.seismic_shot_point_model import (
 )
 
 __all__ = [
+    "UserModel",
     "SegyFileModel",
 ]

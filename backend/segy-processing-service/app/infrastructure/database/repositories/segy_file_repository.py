@@ -24,6 +24,7 @@ class SQLAlchemySegyFileRepository(SegyFileRepository):
 
     def create(self, segy_file: SegyFile) -> SegyFile:
         model = SegyFileModel(
+            user_id=segy_file.user_id,
             filename=segy_file.filename,
             file_path=segy_file.file_path,
             file_size=segy_file.file_size,
@@ -143,6 +144,7 @@ class SQLAlchemySegyFileRepository(SegyFileRepository):
 
         return SegyFile(
             id=model.id,
+            user_id=model.user_id,
             filename=model.filename,
             file_path=model.file_path,
             file_size=model.file_size,

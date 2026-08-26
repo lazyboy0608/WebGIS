@@ -1,8 +1,26 @@
 from collections.abc import Generator
 from pathlib import Path
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
+from app.services.security import decode_access_token
+
+security_scheme = HTTPBearer(auto_error=False)
+
+
+def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+) -> int | None:
+    if not credentials:
+        return None
+    payload = decode_access_token(credentials.credentials)
+    if not payload or "sub" not in payload:
+        return None
+    try:
+        return int(payload["sub"])
+    except (ValueError, TypeError):
+        return None
 
 from app.application.services.processing_persistence import (
     ProcessingResultPersistenceService,

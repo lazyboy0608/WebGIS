@@ -1,11 +1,13 @@
 from datetime import datetime
+from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, Integer, String, Text, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from geoalchemy2 import Geometry
 
 from app.infrastructure.database.base import Base
+from app.infrastructure.database.models.user_model import UserModel  # noqa: F401
 
 
 class SegyFileModel(Base):
@@ -14,6 +16,13 @@ class SegyFileModel(Base):
     id: Mapped[int] = mapped_column(
         primary_key=True,
         autoincrement=True,
+    )
+
+    user_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
 
     filename: Mapped[str] = mapped_column(

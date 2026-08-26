@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     debug: bool = False
     database_url: str = "postgresql+psycopg://postgres:06082004@localhost:5432/webgis"
+    jwt_secret_key: str = "webgis_super_secret_jwt_key_2026_seismic_data_serving"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 24  # 1 day
 
     model_config = SettingsConfigDict(
         env_file=".env",

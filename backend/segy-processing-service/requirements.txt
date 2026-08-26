@@ -17,3 +17,6 @@ shapely>=2.0,<3.0
 
 # FastAPI multipart file uploads
 python-multipart>=0.0.9,<1.0
+
+# JWT token verification
+PyJWT>=2.9.0,<3.0
