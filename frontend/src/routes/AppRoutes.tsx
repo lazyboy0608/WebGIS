@@ -7,7 +7,17 @@ import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const AppRoutes: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  // Khi đang kiểm tra session lần đầu (initAuth), hiển thị màn hình chờ
+  // để tránh redirect nhầm về /login rồi lại jump về /dashboard
+  if (isLoading) {
+    return (
+      <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', background: '#0d131f', color: '#fff' }}>
+        <span>Đang tải...</span>
+      </div>
+    );
+  }
 
   return (
     <Routes>

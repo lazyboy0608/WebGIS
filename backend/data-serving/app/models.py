@@ -19,6 +19,8 @@ class UserModel(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")  # 'user' | 'admin'
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Hash của refresh token hiện tại — None nếu chưa login hoặc đã logout
+    refresh_token_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 

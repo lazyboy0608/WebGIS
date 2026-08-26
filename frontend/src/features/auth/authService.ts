@@ -1,1 +1,1 @@
-export { loginApi, registerApi, getMeApi } from '../../api/authApi';
+export { loginApi, registerApi, getMeApi, refreshApi, logoutApi } from '../../api/authApi';

@@ -1,28 +1,27 @@
-from typing import Generator
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import Cookie, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db_session
 from app.models import UserModel
 from app.services.security import decode_access_token
 
-security_scheme = HTTPBearer(auto_error=False)
-
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+    access_token: str | None = Cookie(default=None),
     db: Session = Depends(get_db_session),
 ) -> UserModel:
-    if not credentials:
+    """
+    Dependency đọc access_token từ HTTPOnly Cookie.
+    Trả về 401 nếu token thiếu, không hợp lệ hoặc đã hết hạn.
+    """
+    if not access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Yêu cầu xác thực tài khoản (Token missing)",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = credentials.credentials
-    payload = decode_access_token(token)
+    payload = decode_access_token(access_token)
     if not payload or "sub" not in payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

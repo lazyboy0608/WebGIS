@@ -1,19 +1,56 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.api.schemas.auth import TokenResponse, UserLogin, UserRegister, UserResponse
+from app.config import settings
 from app.database import get_db_session
 from app.models import UserModel
-from app.services.security import create_access_token, get_password_hash, verify_password
+from app.services.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+    get_password_hash,
+    hash_token,
+    verify_password,
+    verify_token_hash,
+)
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
+# Cookie settings — không dùng HTTPS nên secure=False, samesite='lax'
+COOKIE_SETTINGS = {
+    "httponly": True,
+    "secure": False,      # Đặt True khi deploy lên HTTPS
+    "samesite": "lax",    # 'lax' hoạt động với Vite proxy (cùng origin)
+}
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    """Đặt cả hai token vào HTTPOnly Cookie."""
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        max_age=settings.access_token_expire_minutes * 60,
+        **COOKIE_SETTINGS,
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        **COOKIE_SETTINGS,
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    """Xóa cả hai cookie khi logout."""
+    response.delete_cookie(key="access_token", **COOKIE_SETTINGS)
+    response.delete_cookie(key="refresh_token", **COOKIE_SETTINGS)
+
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(user_in: UserRegister, db: Session = Depends(get_db_session)):
+def register(user_in: UserRegister, response: Response, db: Session = Depends(get_db_session)):
     """Đăng ký tài khoản người dùng mới."""
-    # Check if email is already registered
     existing_user = db.query(UserModel).filter(UserModel.email == user_in.email).first()
     if existing_user:
         raise HTTPException(
@@ -21,7 +58,6 @@ def register(user_in: UserRegister, db: Session = Depends(get_db_session)):
             detail="Email này đã được sử dụng. Vui lòng chọn email khác.",
         )
 
-    # Hash password and create user
     hashed_pwd = get_password_hash(user_in.password)
     new_user = UserModel(
         full_name=user_in.full_name,
@@ -29,28 +65,35 @@ def register(user_in: UserRegister, db: Session = Depends(get_db_session)):
         email=user_in.email,
         date_of_birth=user_in.date_of_birth,
         password_hash=hashed_pwd,
-        role="user",  # Default role
+        role="user",
         is_active=True,
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
-    # Generate access token
+    # Tạo cặp token
     access_token = create_access_token(
         subject=new_user.id,
         extra_claims={"email": new_user.email, "role": new_user.role, "full_name": new_user.full_name},
     )
+    refresh_token = create_refresh_token(subject=new_user.id)
+
+    # Lưu hash refresh token vào DB
+    new_user.refresh_token_hash = hash_token(refresh_token)
+    db.commit()
+
+    # Đặt cookie vào response
+    _set_auth_cookies(response, access_token, refresh_token)
 
     return TokenResponse(
-        access_token=access_token,
-        token_type="bearer",
         user=UserResponse.model_validate(new_user),
+        message="Đăng ký thành công",
     )
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(user_in: UserLogin, db: Session = Depends(get_db_session)):
+def login(user_in: UserLogin, response: Response, db: Session = Depends(get_db_session)):
     """Đăng nhập bằng Email và Password."""
     user = db.query(UserModel).filter(UserModel.email == user_in.email).first()
     if not user or not verify_password(user_in.password, user.password_hash):
@@ -65,16 +108,94 @@ def login(user_in: UserLogin, db: Session = Depends(get_db_session)):
             detail="Tài khoản này đã bị tạm khóa. Vui lòng liên hệ quản trị viên.",
         )
 
+    # Tạo cặp token
     access_token = create_access_token(
         subject=user.id,
         extra_claims={"email": user.email, "role": user.role, "full_name": user.full_name},
     )
+    refresh_token = create_refresh_token(subject=user.id)
+
+    # Lưu hash refresh token vào DB (overwrite token cũ)
+    user.refresh_token_hash = hash_token(refresh_token)
+    db.commit()
+
+    # Đặt cookie vào response
+    _set_auth_cookies(response, access_token, refresh_token)
 
     return TokenResponse(
-        access_token=access_token,
-        token_type="bearer",
         user=UserResponse.model_validate(user),
+        message="Đăng nhập thành công",
     )
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_tokens(
+    response: Response,
+    refresh_token: str | None = Cookie(default=None),
+    db: Session = Depends(get_db_session),
+):
+    """
+    Cấp cặp token mới từ refresh_token cookie.
+    Gọi API này khi access_token hết hạn (FE nhận 401).
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Refresh token không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    if not refresh_token:
+        raise credentials_exception
+
+    payload = decode_refresh_token(refresh_token)
+    if not payload or "sub" not in payload:
+        raise credentials_exception
+
+    try:
+        user_id = int(payload["sub"])
+    except (ValueError, TypeError):
+        raise credentials_exception
+
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user or not user.is_active:
+        raise credentials_exception
+
+    # Kiểm tra refresh token có khớp với hash trong DB không (tránh replay attack)
+    if not user.refresh_token_hash or not verify_token_hash(refresh_token, user.refresh_token_hash):
+        raise credentials_exception
+
+    # Cấp cặp token mới (rotation)
+    new_access_token = create_access_token(
+        subject=user.id,
+        extra_claims={"email": user.email, "role": user.role, "full_name": user.full_name},
+    )
+    new_refresh_token = create_refresh_token(subject=user.id)
+
+    # Cập nhật hash refresh token trong DB
+    user.refresh_token_hash = hash_token(new_refresh_token)
+    db.commit()
+
+    # Đặt cookie mới
+    _set_auth_cookies(response, new_access_token, new_refresh_token)
+
+    return TokenResponse(
+        user=UserResponse.model_validate(user),
+        message="Token đã được làm mới thành công",
+    )
+
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+def logout(
+    response: Response,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    """Đăng xuất — xóa cookie và vô hiệu hóa refresh token trong DB."""
+    current_user.refresh_token_hash = None
+    db.commit()
+
+    _clear_auth_cookies(response)
+    return {"message": "Đăng xuất thành công"}
 
 
 @router.get("/me", response_model=UserResponse)

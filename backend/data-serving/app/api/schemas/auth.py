@@ -38,6 +38,9 @@ class UserResponse(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+    """
+    Response body khi login/register thành công.
+    Token được đặt vào HTTPOnly Cookie, không trả về trong body.
+    """
     user: UserResponse
+    message: str = "Đăng nhập thành công"

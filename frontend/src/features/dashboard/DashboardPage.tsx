@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import '../../App.css';
 import { SeismicMap } from '../../components/SeismicMap';
 import { useSeismicData } from '../../hooks/useSeismicData';
@@ -6,6 +7,12 @@ import { useAuth } from '../auth/AuthContext';
 
 export const DashboardPage: React.FC = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
 
   const [selectedFileIds, setSelectedFileIds] = useState<number[]>([]);
   const [showLines, setShowLines] = useState(true);
@@ -68,7 +75,7 @@ export const DashboardPage: React.FC = () => {
             <div className="user-profile-badge">
               <span>👤 <strong>{user.full_name}</strong></span>
               <span className={`role-tag ${user.role}`}>{user.role}</span>
-              <button type="button" className="logout-btn" onClick={logout}>
+              <button type="button" className="logout-btn" onClick={handleLogout}>
                 Đăng xuất
               </button>
             </div>

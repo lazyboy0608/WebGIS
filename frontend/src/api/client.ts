@@ -1,27 +1,86 @@
-import { TOKEN_KEY } from '../features/auth/AuthContext';
-
-export const API_DATA_SERVING_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8001').replace(/\/$/, '');
+// Base URLs — data-serving requests đi qua Vite proxy (/api → :8001)
+// Vite proxy đảm bảo cùng origin → cookie samesite='lax' hoạt động đúng
+export const API_DATA_SERVING_URL = '';   // proxy: /api/* → localhost:8001
 export const API_PROCESSING_URL = (import.meta.env.VITE_PROCESSING_API_BASE_URL ?? 'http://localhost:8000').replace(/\/$/, '');
 
-function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem(TOKEN_KEY);
-  return token ? { Authorization: `Bearer ${token}` } : {};
+// ─── Refresh Token Logic ──────────────────────────────────────────────────────
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+}> = [];
+
+function processQueue(error: unknown) {
+  failedQueue.forEach(({ resolve, reject }) => {
+    if (error) {
+      reject(error);
+    } else {
+      resolve(undefined);
+    }
+  });
+  failedQueue = [];
 }
 
+async function tryRefreshToken(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/v1/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Core API Client ──────────────────────────────────────────────────────────
+/**
+ * skipRefresh: nếu true, khi nhận 401 sẽ throw thẳng thay vì cố refresh token.
+ * Dùng cho getMeApi() trong initAuth() để tránh vòng lặp redirect vô tận.
+ */
 export async function apiClient<T>(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  _isRetry = false,
+  skipRefresh = false,
 ): Promise<T> {
-  const headers = {
-    ...getAuthHeaders(),
-    ...(options.headers || {}),
-  };
-
   const response = await fetch(url, {
     ...options,
-    headers,
+    credentials: 'include',  // Luôn đính kèm cookie (access_token + refresh_token)
+    headers: {
+      ...(options.headers || {}),
+    },
   });
 
+  // ── Xử lý 401: Access Token hết hạn ──────────────────────────────────────
+  if (response.status === 401 && !_isRetry && !skipRefresh) {
+    if (isRefreshing) {
+      // Có request khác đang refresh — xếp vào queue, chờ refresh xong rồi retry
+      return new Promise<T>((resolve, reject) => {
+        failedQueue.push({
+          resolve: () => resolve(apiClient<T>(url, options, true)),
+          reject,
+        });
+      });
+    }
+
+    isRefreshing = true;
+    const refreshed = await tryRefreshToken();
+    isRefreshing = false;
+
+    if (refreshed) {
+      // Refresh thành công → retry tất cả request trong queue + request hiện tại
+      processQueue(null);
+      return apiClient<T>(url, options, true);
+    } else {
+      // Refresh thất bại → session hết hạn, redirect về /login
+      processQueue(new Error('Session expired'));
+      window.location.href = '/login';
+      throw new Error('Session expired. Vui lòng đăng nhập lại.');
+    }
+  }
+
+  // ── Xử lý lỗi HTTP khác ───────────────────────────────────────────────────
   if (!response.ok) {
     let errorDetail = `Request failed (${response.status})`;
     try {

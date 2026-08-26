@@ -2,11 +2,10 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { AuthLayout } from './AuthLayout';
-import { loginApi } from './authService';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { setSession } = useAuth();
+  const { login } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,15 +25,14 @@ export const LoginPage: React.FC = () => {
 
     try {
       setSubmitting(true);
-      // 1. Call login API directly
-      const res = await loginApi({ email: email.trim(), password });
+      // Gọi login() từ AuthContext — nó gọi API và cập nhật user state trong context
+      await login({ email: email.trim(), password });
 
-      // 2. Show green success pop-up notification
+      // Hiển thị popup thành công rồi chuyển hướng
       setPopup({ type: 'success', message: 'Đăng nhập thành công!' });
 
-      // 3. Delay 1.5s so user clearly sees the green pop-up before state update & navigation
+      // Delay 1.5s để user thấy popup xanh trước khi navigate
       setTimeout(() => {
-        setSession(res.access_token, res.user);
         navigate('/dashboard', { replace: true });
       }, 1500);
     } catch (err: unknown) {

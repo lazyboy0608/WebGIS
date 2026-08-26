@@ -21,25 +21,61 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
-def create_access_token(subject: str | Any, expires_delta: Optional[timedelta] = None, extra_claims: Optional[dict] = None) -> str:
-    """Create JWT access token signed with secret key."""
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-
-    to_encode = {"sub": str(subject), "exp": expire}
+def create_access_token(
+    subject: str | Any,
+    expires_delta: Optional[timedelta] = None,
+    extra_claims: Optional[dict] = None,
+) -> str:
+    """Create short-lived JWT access token signed with access secret key."""
+    expire = datetime.now(timezone.utc) + (
+        expires_delta if expires_delta else timedelta(minutes=settings.access_token_expire_minutes)
+    )
+    to_encode: dict = {"sub": str(subject), "exp": expire, "type": "access"}
     if extra_claims:
         to_encode.update(extra_claims)
+    return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
-    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
-    return encoded_jwt
+
+def create_refresh_token(subject: str | Any) -> str:
+    """Create long-lived JWT refresh token signed with refresh secret key."""
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+    to_encode = {"sub": str(subject), "exp": expire, "type": "refresh"}
+    return jwt.encode(to_encode, settings.refresh_secret_key, algorithm=settings.jwt_algorithm)
 
 
 def decode_access_token(token: str) -> Optional[dict]:
     """Decode and validate a JWT access token."""
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        # Đảm bảo đây là access token
+        if payload.get("type") != "access":
+            return None
         return payload
     except jwt.PyJWTError:
         return None
+
+
+def decode_refresh_token(token: str) -> Optional[dict]:
+    """Decode and validate a JWT refresh token."""
+    try:
+        payload = jwt.decode(token, settings.refresh_secret_key, algorithms=[settings.jwt_algorithm])
+        # Đảm bảo đây là refresh token
+        if payload.get("type") != "refresh":
+            return None
+        return payload
+    except jwt.PyJWTError:
+        return None
+
+
+def hash_token(token: str) -> str:
+    """Hash a token string for secure storage in DB."""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(token.encode("utf-8"), salt).decode("utf-8")
+
+
+def verify_token_hash(plain_token: str, hashed_token: str) -> bool:
+    """Verify a plain token against its stored bcrypt hash."""
+    try:
+        return bcrypt.checkpw(plain_token.encode("utf-8"), hashed_token.encode("utf-8"))
+    except Exception:
+        return False
