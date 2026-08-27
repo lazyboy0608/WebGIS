@@ -1,2 +1,41 @@
-.vscode
-.pytest_cache
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Environment & Secrets
+.env
+.env.local
+*.env
+
+# MinIO & Local Binary Tools (minio.exe exceeds GitHub 100MB limit)
+tools/
+storage/
+storage/segy/
+storage/minio_data/
+*.exe
+*.dll
+
+# OS
+.DS_Store
+Thumbs.db

@@ -20,3 +20,6 @@ python-multipart>=0.0.9,<1.0
 
 # JWT token verification
 PyJWT>=2.9.0,<3.0
+
+# S3 Object Storage
+minio>=7.2.0

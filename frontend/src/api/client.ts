@@ -1,7 +1,8 @@
-// Base URLs — data-serving requests đi qua Vite proxy (/api → :8001)
-// Vite proxy đảm bảo cùng origin → cookie samesite='lax' hoạt động đúng
-export const API_DATA_SERVING_URL = '';   // proxy: /api/* → localhost:8001
-export const API_PROCESSING_URL = (import.meta.env.VITE_PROCESSING_API_BASE_URL ?? 'http://localhost:8000').replace(/\/$/, '');
+// Base URLs — All requests go through Vite proxy (/api → :8000 for uploads/deletes, :8001 for data-serving)
+// Vite proxy ensures same origin (:5173) → cookie SameSite='Lax' works consistently
+export const API_DATA_SERVING_URL = '';
+export const API_PROCESSING_URL = import.meta.env.VITE_PROCESSING_API_BASE_URL ?? '';
+
 
 // ─── Refresh Token Logic ──────────────────────────────────────────────────────
 let isRefreshing = false;

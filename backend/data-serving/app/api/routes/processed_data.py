@@ -1,17 +1,23 @@
 from typing import Any
 
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.api.schemas.processed_data import (
+    DownloadUrlResponse,
+    ExportCsvResponse,
     FileListResponse,
     GeoJSONFeature,
     GeoJSONFeatureCollection,
     ProcessedDataSummary,
 )
+from app.config import settings
+from app.core.rate_limiter import user_rate_limit
 from app.database import get_db_session
 from app.models import UserModel
+from app.services.export_service import ExportService
 from app.services.processed_data_query import ProcessedDataQueryService
 
 router = APIRouter(prefix="/api/segy-files", tags=["Processed Data"])
@@ -23,7 +29,14 @@ def get_query_service(
     return ProcessedDataQueryService(session)
 
 
+def get_export_service(
+    session: Session = Depends(get_db_session),
+) -> ExportService:
+    return ExportService(session)
+
+
 def _user_id_filter(current_user: UserModel) -> int | None:
+
     """Return None (no filter) for admins, or user's own id for regular users."""
     return None if current_user.role == "admin" else current_user.id
 
@@ -164,6 +177,7 @@ def clip_processed_lines(
     line_id: int | None = Query(default=None, ge=1),
     service: ProcessedDataQueryService = Depends(get_query_service),
     current_user: UserModel = Depends(get_current_user),
+    _rl: None = Depends(user_rate_limit(settings.rate_limit_clip, settings.rate_limit_window_seconds)),
 ) -> GeoJSONFeatureCollection:
     user_id = _user_id_filter(current_user)
     ensure_file_accessible(file_id, service, user_id)
@@ -175,3 +189,52 @@ def clip_processed_lines(
             detail=str(exc),
         ) from exc
     return GeoJSONFeatureCollection.model_validate(payload)
+
+
+@router.get("/{file_id}/download-url", response_model=DownloadUrlResponse)
+def get_raw_file_download_url(
+    file_id: int,
+    query_service: ProcessedDataQueryService = Depends(get_query_service),
+    export_service: ExportService = Depends(get_export_service),
+    current_user: UserModel = Depends(get_current_user),
+) -> DownloadUrlResponse:
+    user_id = _user_id_filter(current_user)
+    ensure_file_accessible(file_id, query_service, user_id)
+    try:
+        res = export_service.get_raw_file_download_url(file_id)
+        return DownloadUrlResponse.model_validate(res)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate download URL: {exc}",
+        ) from exc
+
+
+@router.post("/{file_id}/export/csv", response_model=ExportCsvResponse)
+def export_traces_csv(
+    file_id: int,
+    query_service: ProcessedDataQueryService = Depends(get_query_service),
+    export_service: ExportService = Depends(get_export_service),
+    current_user: UserModel = Depends(get_current_user),
+) -> ExportCsvResponse:
+    user_id = _user_id_filter(current_user)
+    ensure_file_accessible(file_id, query_service, user_id)
+    try:
+        res = export_service.export_traces_csv(file_id)
+        return ExportCsvResponse.model_validate(res)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export CSV: {exc}",
+        ) from exc
+

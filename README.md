@@ -57,6 +57,21 @@ __________________________________
 
 ## 4. Hướng dẫn chạy project
 
+### Terminal 0: Khởi động MinIO Server (Local)
+
+Chạy file script tự động tải và khởi động MinIO (chỉ cần chạy lần đầu sẽ tự download `minio.exe`):
+
+```bash
+# Bằng Command Prompt / double click:
+start_minio.bat
+
+# Hoặc bằng PowerShell:
+.\start_minio.ps1
+```
+
+- **S3 API**: `http://localhost:9000`
+- **MinIO Web Console**: `http://localhost:9001` (Tài khoản: `minioadmin` / `minioadmin`)
+
 ### Terminal 1: Backend 1 (segy-processing-service)
 
 ```bash
@@ -64,6 +79,7 @@ cd backend
 cd segy-processing-service
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
+
 ### Terminal 2: Backend 2 (data-serving)
 
 ```bash
@@ -78,3 +94,4 @@ cd data-serving
 cd frontend
 npm run dev
 ```
+

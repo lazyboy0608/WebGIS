@@ -1,7 +1,7 @@
 from collections.abc import Generator
 from pathlib import Path
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from app.services.security import decode_access_token
@@ -10,11 +10,22 @@ security_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user_id(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
+    access_token: str | None = Cookie(default=None),
 ) -> int | None:
-    if not credentials:
+    """
+    Extract authenticated user_id from request.
+
+    Tries in order:
+      1. Authorization: Bearer <token>  (API clients, Swagger UI)
+      2. access_token cookie            (browser frontend — credentials:'include')
+
+    Returns None if no valid token is found (unauthenticated upload is allowed).
+    """
+    token: str | None = credentials.credentials if credentials else access_token
+    if not token:
         return None
-    payload = decode_access_token(credentials.credentials)
+    payload = decode_access_token(token)
     if not payload or "sub" not in payload:
         return None
     try:
@@ -46,9 +57,10 @@ from app.infrastructure.database.repositories.seismic_trace_repository import (
 )
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.segy.segyio_reader import SegyIOReader
-from app.infrastructure.storage.local_file_storage import (
-    LocalFileStorage,
-)
+from app.core.config import settings
+from app.domain.services.file_storage import FileStorage
+from app.infrastructure.storage.local_file_storage import LocalFileStorage
+from app.infrastructure.storage.minio_file_storage import MinioFileStorage
 from app.services.coordinate_transformer import CoordinateTransformer
 from app.services.crs_transformer import CRSTransformer
 from app.services.line_builder import LineBuilder
@@ -79,13 +91,21 @@ def get_segy_file_repository(
     return SQLAlchemySegyFileRepository(session)
 
 
-def get_file_storage() -> LocalFileStorage:
-    return LocalFileStorage(Path("storage/segy"))
+def get_file_storage() -> FileStorage:
+    if settings.STORAGE_TYPE.lower() == "minio":
+        return MinioFileStorage(
+            endpoint=settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_SECURE,
+            bucket_name=settings.MINIO_BUCKET_RAW,
+        )
+    return LocalFileStorage(settings.LOCAL_STORAGE_DIR)
 
 
 def get_segy_file_service(
     repository: SQLAlchemySegyFileRepository = Depends(get_segy_file_repository),
-    file_storage: LocalFileStorage = Depends(get_file_storage),
+    file_storage: FileStorage = Depends(get_file_storage),
 ) -> SegyFileService:
     return SegyFileService(
         repository,
@@ -95,8 +115,9 @@ def get_segy_file_service(
 
 def get_process_segy_file_use_case(
     session: Session = Depends(get_db_session),
-    file_storage: LocalFileStorage = Depends(get_file_storage),
+    file_storage: FileStorage = Depends(get_file_storage),
 ) -> ProcessSegyFileUseCase:
+
     coordinate_transformer = CoordinateTransformer()
     processing_service = SegyProcessingService(
         segy_reader=SegyReaderService(

@@ -42,3 +42,22 @@ class FileListResponse(BaseModel):
     total: int
     offset: int = 0
     limit: int = 50
+
+
+class ExportCsvResponse(BaseModel):
+    segy_file_id: int
+    filename: str
+    object_name: str
+    bucket: str
+    size_bytes: int
+    record_count: int
+    download_url: str
+
+
+class DownloadUrlResponse(BaseModel):
+    segy_file_id: int
+    filename: str
+    object_name: str
+    bucket: str
+    download_url: str
+

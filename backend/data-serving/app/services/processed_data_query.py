@@ -24,8 +24,10 @@ class ProcessedDataQueryService:
             return cached[1]
 
         value = loader()
-        self._cache[key] = (now, value)
+        if value is not None:
+            self._cache[key] = (now, value)
         return value
+
 
     def file_exists(self, file_id: int, user_id: int | None = None) -> bool:
         from app.models import SegyFileModel
@@ -47,14 +49,16 @@ class ProcessedDataQueryService:
             SegyFileModel.source_crs,
             SegyFileModel.trace_count,
             SegyFileModel.line_count,
-        ).order_by(SegyFileModel.id).offset(offset).limit(limit)
+        ).order_by(SegyFileModel.id.desc()).offset(offset).limit(limit)
 
         if user_id is not None:
-            count_stmt = count_stmt.where(SegyFileModel.user_id == user_id)
-            select_stmt = select_stmt.where(SegyFileModel.user_id == user_id)
+            user_filter = (SegyFileModel.user_id == user_id) | (SegyFileModel.user_id.is_(None))
+            count_stmt = count_stmt.where(user_filter)
+            select_stmt = select_stmt.where(user_filter)
 
         total = self.session.execute(count_stmt).scalar_one()
         rows = self.session.execute(select_stmt).all()
+
 
         items: list[dict[str, Any]] = []
         for row in rows:
@@ -131,7 +135,7 @@ class ProcessedDataQueryService:
                 "processed_trace_count": processed_trace_count,
             }
 
-        return self._cached(f"summary:{file_id}", load)
+        return self._cached(f"summary:{file_id}:{user_id}", load)
 
     @staticmethod
     def _parse_bbox(bbox: str | None) -> tuple[float, float, float, float] | None:

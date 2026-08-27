@@ -10,8 +10,11 @@ from fastapi import (
     status,
 )
 
+from sqlalchemy.orm import Session
+
 from app.api.dependencies import (
     get_current_user_id,
+    get_db_session,
     get_file_storage,
     get_processed_data_query_service,
     get_process_segy_file_use_case,
@@ -31,9 +34,10 @@ from app.application.use_cases.process_segy_file_use_case import (
     ProcessSegyFileUseCase,
 )
 from app.application.services.processed_data_query import ProcessedDataQueryService
+from app.core.rate_limiter import UPLOAD_BATCH_MAX, UPLOAD_SINGLE_MAX, upload_rate_limit
 from app.domain.models.segy_file import SegyFile
+from app.domain.services.file_storage import FileStorage
 from app.infrastructure.segy.segyio_reader import SegyIOReader
-from app.infrastructure.storage.local_file_storage import LocalFileStorage
 from app.services.segy_file_service import SegyFileService
 from app.services.segy_reader import SegyReaderService
 from app.services.source_crs_extractor import extract_source_crs
@@ -89,7 +93,8 @@ async def _upload_and_process(
     service: SegyFileService,
     query_service: ProcessedDataQueryService,
     use_case: ProcessSegyFileUseCase,
-    file_storage: LocalFileStorage,
+    file_storage: FileStorage,
+    session: Session | None = None,
     user_id: int | None = None,
     stored_paths: list[Path] | None = None,
 ) -> SegyProcessingResponse:
@@ -115,7 +120,8 @@ async def _upload_and_process(
                 ),
             )
 
-    stored_path = file_storage.save(filename, await file.read())
+    file_bytes = await file.read()
+    stored_path = file_storage.save(filename, file_bytes)
     if stored_paths is not None:
         stored_paths.append(stored_path)
 
@@ -124,7 +130,8 @@ async def _upload_and_process(
             reader=SegyIOReader(),
             validator=SegyValidator(),
         )
-        metadata = reader.read_metadata(stored_path)
+        resolved_local_path = file_storage.get_path(str(stored_path))
+        metadata = reader.read_metadata(resolved_local_path)
         try:
             resolved_source_crs = source_crs or extract_source_crs(metadata)
         except ValueError as exc:
@@ -138,7 +145,7 @@ async def _upload_and_process(
                 user_id=user_id,
                 filename=filename,
                 file_path=str(stored_path),
-                file_size=stored_path.stat().st_size,
+                file_size=len(file_bytes),
                 source_crs=resolved_source_crs,
                 trace_count=metadata.trace_count,
                 line_count=1,
@@ -154,10 +161,13 @@ async def _upload_and_process(
             segy_file_id=segy_file.id,
             source_crs=resolved_source_crs,
         )
+        if session is not None:
+            session.commit()
         return _processing_response(result, segy_file.id, filename)
     except Exception:
         file_storage.delete(stored_path)
         raise
+
 
 
 @router.post(
@@ -176,7 +186,9 @@ async def upload_and_process_segy_file(
     use_case: ProcessSegyFileUseCase = Depends(
         get_process_segy_file_use_case,
     ),
-    file_storage: LocalFileStorage = Depends(get_file_storage),
+    file_storage: FileStorage = Depends(get_file_storage),
+    session: Session = Depends(get_db_session),
+    _rl: None = Depends(upload_rate_limit(UPLOAD_SINGLE_MAX)),
 ) -> SegyProcessingResponse:
     return await _upload_and_process(
         file,
@@ -185,6 +197,7 @@ async def upload_and_process_segy_file(
         query_service,
         use_case,
         file_storage,
+        session=session,
         user_id=current_user_id,
     )
 
@@ -205,7 +218,9 @@ async def upload_and_process_segy_files(
     use_case: ProcessSegyFileUseCase = Depends(
         get_process_segy_file_use_case,
     ),
-    file_storage: LocalFileStorage = Depends(get_file_storage),
+    file_storage: FileStorage = Depends(get_file_storage),
+    session: Session = Depends(get_db_session),
+    _rl: None = Depends(upload_rate_limit(UPLOAD_BATCH_MAX)),
 ) -> SegyUploadBatchResponse:
     if not files:
         raise HTTPException(
@@ -225,6 +240,7 @@ async def upload_and_process_segy_files(
                     query_service,
                     use_case,
                     file_storage,
+                    session=session,
                     user_id=current_user_id,
                     stored_paths=stored_paths,
                 )
@@ -236,6 +252,7 @@ async def upload_and_process_segy_files(
         raise
 
     return SegyUploadBatchResponse(files=results)
+
 
 
 @router.post(

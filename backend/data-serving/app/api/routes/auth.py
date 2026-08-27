@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.api.schemas.auth import TokenResponse, UserLogin, UserRegister, UserResponse
 from app.config import settings
+from app.core.rate_limiter import ip_rate_limit
 from app.database import get_db_session
 from app.models import UserModel
 from app.services.security import (
@@ -49,7 +50,12 @@ def _clear_auth_cookies(response: Response) -> None:
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(user_in: UserRegister, response: Response, db: Session = Depends(get_db_session)):
+def register(
+    user_in: UserRegister,
+    response: Response,
+    db: Session = Depends(get_db_session),
+    _rl: None = Depends(ip_rate_limit(settings.rate_limit_register, settings.rate_limit_window_seconds)),
+):
     """Đăng ký tài khoản người dùng mới."""
     existing_user = db.query(UserModel).filter(UserModel.email == user_in.email).first()
     if existing_user:
@@ -93,7 +99,12 @@ def register(user_in: UserRegister, response: Response, db: Session = Depends(ge
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(user_in: UserLogin, response: Response, db: Session = Depends(get_db_session)):
+def login(
+    user_in: UserLogin,
+    response: Response,
+    db: Session = Depends(get_db_session),
+    _rl: None = Depends(ip_rate_limit(settings.rate_limit_login, settings.rate_limit_window_seconds)),
+):
     """Đăng nhập bằng Email và Password."""
     user = db.query(UserModel).filter(UserModel.email == user_in.email).first()
     if not user or not verify_password(user_in.password, user.password_hash):
@@ -133,6 +144,7 @@ def refresh_tokens(
     response: Response,
     refresh_token: str | None = Cookie(default=None),
     db: Session = Depends(get_db_session),
+    _rl: None = Depends(ip_rate_limit(settings.rate_limit_refresh, settings.rate_limit_window_seconds)),
 ):
     """
     Cấp cặp token mới từ refresh_token cookie.
