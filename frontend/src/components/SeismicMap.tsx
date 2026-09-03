@@ -4,7 +4,7 @@ import View from 'ol/View'
 import GeoJSON from 'ol/format/GeoJSON'
 import TileLayer from 'ol/layer/Tile'
 import VectorLayer from 'ol/layer/Vector'
-import OSM from 'ol/source/OSM'
+import XYZ from 'ol/source/XYZ'
 import VectorSource from 'ol/source/Vector'
 import { Fill, Circle as CircleStyle, Stroke, Style } from 'ol/style'
 import { fromLonLat, toLonLat } from 'ol/proj'
@@ -22,6 +22,7 @@ type Props = {
   showTraces: boolean
   isDrawingPolygon?: boolean
   drawnPolygonRing?: [number, number][] | null
+  savedPolygonRings?: [number, number][][]
   onPolygonFinish?: (ring: [number, number][]) => void
 }
 
@@ -87,6 +88,7 @@ export function SeismicMap({
   showTraces,
   isDrawingPolygon = false,
   drawnPolygonRing = null,
+  savedPolygonRings = [],
   onPolygonFinish,
 }: Props) {
   const targetRef = useRef<HTMLDivElement>(null)
@@ -96,6 +98,7 @@ export function SeismicMap({
     insideLines: VectorLayer<VectorSource>
     outsideLines: VectorLayer<VectorSource>
     polygon: VectorLayer<VectorSource>
+    savedPolygons: VectorLayer<VectorSource>
     points: VectorLayer<VectorSource>
     traces: VectorLayer<VectorSource>
   } | null>(null)
@@ -124,16 +127,28 @@ export function SeismicMap({
       style: polygonStyle,
     })
 
+    const savedPolygonsLayer = new VectorLayer({
+      source: new VectorSource(),
+      style: polygonStyle,
+    })
+
     const points = new VectorLayer({ source: new VectorSource(), style: pointStyle })
     const traces = new VectorLayer({ source: new VectorSource(), style: traceStyle })
 
     const map = new Map({
       target: targetRef.current,
       layers: [
-        new TileLayer({ source: new OSM() }),
+        new TileLayer({
+          source: new XYZ({
+            url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+            attributions: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community',
+            maxZoom: 19,
+          }),
+        }),
         lines,
         insideLines,
         outsideLines,
+        savedPolygonsLayer,
         polygonLayer,
         points,
         traces,
@@ -147,6 +162,7 @@ export function SeismicMap({
       insideLines,
       outsideLines,
       polygon: polygonLayer,
+      savedPolygons: savedPolygonsLayer,
       points,
       traces,
     }
@@ -241,6 +257,7 @@ export function SeismicMap({
     const layerSet = layersRef.current
     if (!layerSet) return
 
+    // --- Drawn polygon (temporary, shown while user is reviewing before save) ---
     const polySource = layerSet.polygon.getSource()
     polySource?.clear()
 
@@ -248,6 +265,23 @@ export function SeismicMap({
       const polyGeom = new Polygon([drawnPolygonRing]).transform('EPSG:4326', 'EPSG:3857')
       polySource?.addFeature(new Feature({ geometry: polyGeom }))
     }
+
+    // --- Saved polygons layer ---
+    const savedPolySource = layerSet.savedPolygons.getSource()
+    savedPolySource?.clear()
+    for (const ring of savedPolygonRings) {
+      if (ring.length >= 3) {
+        const polyGeom = new Polygon([ring]).transform('EPSG:4326', 'EPSG:3857')
+        savedPolySource?.addFeature(new Feature({ geometry: polyGeom }))
+      }
+    }
+
+    // All active rings for spatial line classification (drawn + saved active)
+    const allActiveRings: [number, number][][] = [
+      ...(drawnPolygonRing && drawnPolygonRing.length >= 3 ? [drawnPolygonRing] : []),
+      ...savedPolygonRings.filter((r) => r.length >= 3),
+    ]
+    const hasPolygon = allActiveRings.length > 0
 
     const insideSource = layerSet.insideLines.getSource()
     const outsideSource = layerSet.outsideLines.getSource()
@@ -257,30 +291,43 @@ export function SeismicMap({
     outsideSource?.clear()
     linesSource?.clear()
 
-    const hasPolygon = Boolean(drawnPolygonRing && drawnPolygonRing.length >= 3)
-
     if (hasPolygon && data?.lines && showLines) {
       layerSet.lines.setVisible(false)
       layerSet.insideLines.setVisible(true)
       layerSet.outsideLines.setVisible(true)
 
+      // Project all active polygon rings to EPSG:3857 for clipping
+      const polyRings3857 = allActiveRings.map((ring) =>
+        ring.map((c) => fromLonLat(c) as [number, number])
+      )
+
       for (const feature of data.lines.features) {
         const lineStrings = extractLineStrings(feature.geometry)
         for (const lineCoords of lineStrings) {
-          // Project coordinates to EPSG:3857 before spatial clipping to avoid curvature distortion
           const lineCoords3857 = lineCoords.map((c) => fromLonLat(c) as [number, number])
-          const polyRing3857 = drawnPolygonRing!.map((c) => fromLonLat(c) as [number, number])
 
-          const { inside, outside } = clipLineStringByPolygon(lineCoords3857, polyRing3857)
+          // A segment is "inside" if it is inside ANY of the active polygons
+          let allInside: [number, number][][] = []
+          let remainingCoords: [number, number][][] = [lineCoords3857]
 
-          for (const subCoords of inside) {
+          for (const polyRing3857 of polyRings3857) {
+            const nextRemaining: [number, number][][] = []
+            for (const seg of remainingCoords) {
+              const { inside, outside } = clipLineStringByPolygon(seg, polyRing3857)
+              allInside = [...allInside, ...inside]
+              nextRemaining.push(...outside)
+            }
+            remainingCoords = nextRemaining
+          }
+
+          for (const subCoords of allInside) {
             const geom = new LineString(subCoords)
             const f = new Feature({ geometry: geom })
             f.setProperties(feature.properties)
             insideSource?.addFeature(f)
           }
 
-          for (const subCoords of outside) {
+          for (const subCoords of remainingCoords) {
             const geom = new LineString(subCoords)
             const f = new Feature({ geometry: geom })
             f.setProperties(feature.properties)
@@ -355,7 +402,7 @@ export function SeismicMap({
         duration: 500,
       })
     }
-  }, [data, showLines, showPoints, showTraces, drawnPolygonRing])
+  }, [data, showLines, showPoints, showTraces, drawnPolygonRing, savedPolygonRings])
 
   return (
     <div ref={targetRef} className="map" aria-label="Bản đồ dữ liệu địa chấn">

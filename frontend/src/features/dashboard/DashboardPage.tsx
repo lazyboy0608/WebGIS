@@ -1,9 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../../App.css';
 import { SeismicMap } from '../../components/SeismicMap';
 import { useSeismicData } from '../../hooks/useSeismicData';
 import { useAuth } from '../auth/AuthContext';
+import {
+  loadWorkspace,
+  useWorkspacePersistence,
+  type SavedPolygon,
+} from '../../hooks/useWorkspacePersistence';
 
 export const DashboardPage: React.FC = () => {
   const { user, logout } = useAuth();
@@ -14,14 +19,67 @@ export const DashboardPage: React.FC = () => {
     navigate('/login', { replace: true });
   };
 
-  const [selectedFileIds, setSelectedFileIds] = useState<number[]>([]);
-  const [showLines, setShowLines] = useState(true);
-  const [showPoints, setShowPoints] = useState(true);
-  const [showTraces, setShowTraces] = useState(false);
+  // ── Khôi phục workspace đã lưu của user này từ localStorage ──────────────
+  // useMemo đảm bảo chỉ đọc localStorage 1 lần duy nhất khi userId thay đổi
+  // (không re-read mỗi render)
+  const initialWorkspace = useMemo(
+    () => (user ? loadWorkspace(user.id) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user?.id],
+  );
+
+  const [selectedFileIds, setSelectedFileIds] = useState<number[]>(
+    () => initialWorkspace?.selectedFileIds ?? [],
+  );
+  const [showLines, setShowLines] = useState<boolean>(
+    () => initialWorkspace?.showLines ?? true,
+  );
+  const [showPoints, setShowPoints] = useState<boolean>(
+    () => initialWorkspace?.showPoints ?? true,
+  );
+  const [showTraces, setShowTraces] = useState<boolean>(
+    () => initialWorkspace?.showTraces ?? false,
+  );
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const [isDrawingPolygon, setIsDrawingPolygon] = useState(false);
+  // drawnPolygonRing là state tạm thời — không restore sau login
   const [drawnPolygonRing, setDrawnPolygonRing] = useState<[number, number][] | null>(null);
+
+  // Saved polygons
+  const [savedPolygons, setSavedPolygons] = useState<SavedPolygon[]>(
+    () => initialWorkspace?.savedPolygons ?? [],
+  );
+  const [activePolygonIds, setActivePolygonIds] = useState<string[]>(
+    () => initialWorkspace?.activePolygonIds ?? [],
+  );
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [pendingPolygonName, setPendingPolygonName] = useState('');
+  const [pendingRing, setPendingRing] = useState<[number, number][] | null>(null);
+
+  // ── Persistence hook ──────────────────────────────────────────────────────
+  const { save } = useWorkspacePersistence(user?.id ?? null);
+
+  // Lưu workspace mỗi khi state thay đổi (debounced 300ms bên trong hook)
+  useEffect(() => {
+    save({ selectedFileIds, showLines, showPoints, showTraces, savedPolygons, activePolygonIds });
+  }, [save, selectedFileIds, showLines, showPoints, showTraces, savedPolygons, activePolygonIds]);
+
+  // Re-hydrate: AuthContext resolve user bất đồng bộ (cookie → /me).
+  // useState lazy initializer đã chạy khi user còn null → cần apply lại
+  // workspace sau khi user.id xác định lần đầu tiên.
+  const hydratedRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!user || hydratedRef.current === user.id) return;
+    hydratedRef.current = user.id;
+    const ws = loadWorkspace(user.id);
+    setSelectedFileIds(ws.selectedFileIds);
+    setShowLines(ws.showLines);
+    setShowPoints(ws.showPoints);
+    setShowTraces(ws.showTraces);
+    setSavedPolygons(ws.savedPolygons);
+    setActivePolygonIds(ws.activePolygonIds);
+  }, [user]);
 
   const { files, summary, layers, loading, uploading, deleting, error, uploadFiles, deleteFiles } = useSeismicData(selectedFileIds);
   const selectedFiles = files.filter((file) => selectedFileIds.includes(file.id));
@@ -62,6 +120,46 @@ export const DashboardPage: React.FC = () => {
     setDrawnPolygonRing(ring);
     setIsDrawingPolygon(false);
   }
+
+  function handleSavePolygonClick() {
+    if (!drawnPolygonRing) return;
+    setPendingRing(drawnPolygonRing);
+    setPendingPolygonName('');
+    setShowSaveModal(true);
+  }
+
+  function handleConfirmSavePolygon() {
+    if (!pendingRing) return;
+    const name = pendingPolygonName.trim() || `Polygon ${savedPolygons.length + 1}`;
+    const newPolygon: SavedPolygon = {
+      id: Date.now().toString(),
+      name,
+      ring: pendingRing,
+    };
+    setSavedPolygons((prev) => [...prev, newPolygon]);
+    setActivePolygonIds((prev) => [...prev, newPolygon.id]);
+    setShowSaveModal(false);
+    setPendingRing(null);
+    setPendingPolygonName('');
+    // Clear the drawn polygon from the drawing tool
+    setDrawnPolygonRing(null);
+  }
+
+  function handleToggleSavedPolygon(id: string) {
+    setActivePolygonIds((prev) =>
+      prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id]
+    );
+  }
+
+  function handleDeleteSavedPolygon(id: string) {
+    setSavedPolygons((prev) => prev.filter((p) => p.id !== id));
+    setActivePolygonIds((prev) => prev.filter((pid) => pid !== id));
+  }
+
+  // Merge active saved polygon rings for map display
+  const activePolygonRings = activePolygonIds
+    .map((id) => savedPolygons.find((p) => p.id === id)?.ring)
+    .filter((r): r is [number, number][] => Boolean(r));
 
   return (
     <main className="shell">
@@ -126,6 +224,8 @@ export const DashboardPage: React.FC = () => {
 
           <div className="rule" />
           <p className="section-label">Spatial Filter</p>
+
+          {/* Draw / Save / Clear controls */}
           {!drawnPolygonRing ? (
             <button
               type="button"
@@ -136,22 +236,62 @@ export const DashboardPage: React.FC = () => {
               <b>⬡</b>
             </button>
           ) : (
-            <button
-              type="button"
-              className="btn-clear-polygon"
-              onClick={() => {
-                setDrawnPolygonRing(null);
-                setIsDrawingPolygon(false);
-              }}
-            >
-              <span>Xóa polygon</span>
-              <b>✕</b>
-            </button>
+            <div className="drawn-polygon-actions">
+              <button
+                type="button"
+                className="btn-save-polygon"
+                onClick={handleSavePolygonClick}
+              >
+                <span>Lưu</span>
+                <b>💾</b>
+              </button>
+              <button
+                type="button"
+                className="btn-clear-polygon"
+                onClick={() => {
+                  setDrawnPolygonRing(null);
+                  setIsDrawingPolygon(false);
+                }}
+              >
+                <span>Xóa</span>
+                <b>✕</b>
+              </button>
+            </div>
           )}
           {isDrawingPolygon && (
             <small className="drawing-hint">
               Click trên bản đồ để chọn các đỉnh. Double-click hoặc click điểm đầu để hoàn thành.
             </small>
+          )}
+
+          {/* Saved polygons list */}
+          {savedPolygons.length > 0 && (
+            <div className="saved-polygons-list">
+              {savedPolygons.map((poly) => {
+                const isActive = activePolygonIds.includes(poly.id);
+                return (
+                  <div key={poly.id} className={`saved-polygon-item${isActive ? ' is-active' : ''}`}>
+                    <button
+                      type="button"
+                      className="saved-polygon-toggle"
+                      onClick={() => handleToggleSavedPolygon(poly.id)}
+                      title={isActive ? 'Ẩn polygon trên bản đồ' : 'Hiện polygon trên bản đồ'}
+                    >
+                      <span className="saved-polygon-dot" />
+                      <span className="saved-polygon-name">{poly.name}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="saved-polygon-delete"
+                      onClick={() => handleDeleteSavedPolygon(poly.id)}
+                      title="Xóa polygon"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           )}
 
           <div className="rule" />
@@ -169,13 +309,14 @@ export const DashboardPage: React.FC = () => {
             showTraces={showTraces}
             isDrawingPolygon={isDrawingPolygon}
             drawnPolygonRing={drawnPolygonRing}
+            savedPolygonRings={activePolygonRings}
             onPolygonFinish={handlePolygonFinish}
           />
           {selectedFileIds.length === 0 && <div className="map-empty"><span>⌁</span><strong>Select surveys to begin</strong><small>Processed geometry will appear here</small></div>}
           {loading && <div className="loading">Loading data...</div>}
           {error && <div className="error">{error}</div>}
           <div className="map-legend">
-            {drawnPolygonRing ? (
+            {(drawnPolygonRing || activePolygonRings.length > 0) ? (
               <>
                 <span><i className="line-key line-inside-key" />Inside (Xanh)</span>
                 <span><i className="line-key line-outside-key" />Outside (Đỏ)</span>
@@ -203,6 +344,29 @@ export const DashboardPage: React.FC = () => {
             <div className="modal-actions">
               <button type="button" className="btn-cancel" disabled={deleting} onClick={() => setShowDeleteModal(false)}>Hủy</button>
               <button type="button" className="btn-delete-confirm" disabled={deleting} onClick={handleConfirmDelete}>{deleting ? 'Đang xóa...' : 'Xóa dữ liệu'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save polygon modal */}
+      {showSaveModal && (
+        <div className="modal-backdrop" onClick={() => setShowSaveModal(false)}>
+          <div className="modal-box modal-box--save" onClick={(e) => e.stopPropagation()}>
+            <h3 className="modal-save-title">Lưu Polygon</h3>
+            <p>Đặt tên cho polygon này để hiển thị trong danh sách Spatial Filter.</p>
+            <input
+              autoFocus
+              type="text"
+              className="polygon-name-input"
+              placeholder="Nhập tên polygon..."
+              value={pendingPolygonName}
+              onChange={(e) => setPendingPolygonName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmSavePolygon(); if (e.key === 'Escape') setShowSaveModal(false); }}
+            />
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setShowSaveModal(false)}>Hủy</button>
+              <button type="button" className="btn-save-confirm" onClick={handleConfirmSavePolygon}>Lưu polygon</button>
             </div>
           </div>
         </div>

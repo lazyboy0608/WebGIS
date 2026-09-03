@@ -65,4 +65,30 @@ select { width: 100%; padding: 13px 10px; border: 1px solid #bfcac4; border-radi
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+/* Drawn polygon action row (Save + Clear) */
+.drawn-polygon-actions { display: flex; gap: 8px; }
+.btn-save-polygon { flex: 1; display: flex; justify-content: space-between; align-items: center; padding: 11px 10px; border: 1px solid var(--teal); border-radius: 2px; background: var(--teal); color: white; font: 500 13px 'Space Grotesk', sans-serif; cursor: pointer; transition: all .2s; }
+.btn-save-polygon:hover { background: #155f6e; transform: translateY(-1px); }
+.btn-save-polygon b { font-size: 15px; font-weight: 400; line-height: 1; }
+.drawn-polygon-actions .btn-clear-polygon { flex: 0 0 auto; width: auto; padding: 11px 14px; }
+
+/* Save polygon modal */
+.modal-box--save { max-width: 380px; }
+.modal-save-title { color: var(--teal) !important; }
+.polygon-name-input { width: 100%; padding: 10px 12px; border: 1px solid #bfcac4; border-radius: 2px; background: #fff; color: var(--ink); font: 13px 'Space Grotesk', sans-serif; margin-bottom: 16px; outline: none; transition: border-color .15s; }
+.polygon-name-input:focus { border-color: var(--teal); box-shadow: 0 0 0 2px rgba(29,122,140,0.15); }
+.btn-save-confirm { padding: 9px 16px; border: 1px solid var(--teal); background: var(--teal); color: white; font: 500 13px 'Space Grotesk', sans-serif; cursor: pointer; border-radius: 2px; transition: background .15s; }
+.btn-save-confirm:hover { background: #155f6e; }
+
+/* Saved polygon list */
+.saved-polygons-list { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+.saved-polygon-item { display: flex; align-items: center; border: 1px solid #d4ddd9; border-radius: 2px; background: #f9faf9; overflow: hidden; transition: border-color .15s, background .15s; }
+.saved-polygon-item.is-active { border-color: var(--teal); background: #edf6f8; }
+.saved-polygon-toggle { flex: 1; display: flex; align-items: center; gap: 7px; padding: 8px 9px; background: none; border: none; cursor: pointer; text-align: left; min-width: 0; }
+.saved-polygon-dot { flex-shrink: 0; width: 10px; height: 10px; border-radius: 50%; background: #bfcac4; border: 1.5px solid #9ab0ab; transition: background .15s, border-color .15s; }
+.saved-polygon-item.is-active .saved-polygon-dot { background: var(--teal); border-color: #155f6e; }
+.saved-polygon-name { font: 12px 'Space Grotesk', sans-serif; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-polygon-item.is-active .saved-polygon-name { font-weight: 600; color: var(--teal); }
+.saved-polygon-delete { flex-shrink: 0; padding: 8px 9px; background: none; border: none; border-left: 1px solid #d4ddd9; color: #9ab0ab; font-size: 11px; cursor: pointer; transition: color .15s, background .15s; }
+.saved-polygon-delete:hover { color: #c9302c; background: #fff5f5; }
 
