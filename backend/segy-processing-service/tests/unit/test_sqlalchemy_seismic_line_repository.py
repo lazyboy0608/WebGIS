@@ -83,7 +83,7 @@ def test_save_line_rejects_empty_coordinates():
     session.add.assert_not_called()
 
 
-def test_save_line_rejects_single_coordinate():
+def test_save_line_supports_single_coordinate():
     repository, session = create_repository()
 
     line = SeismicLine(
@@ -93,10 +93,10 @@ def test_save_line_rejects_single_coordinate():
         ],
     )
 
-    with pytest.raises(ValueError):
-        repository.save_line(
-            line=line,
-            segy_file_id=1,
-        )
+    repository.save_line(
+        line=line,
+        segy_file_id=1,
+    )
 
-    session.add.assert_not_called()
+    session.add.assert_called_once()
+    session.flush.assert_called_once()

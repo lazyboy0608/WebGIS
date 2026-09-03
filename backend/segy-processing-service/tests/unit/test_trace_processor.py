@@ -124,3 +124,28 @@ def test_process_trace_applies_scalar() -> None:
     assert result.coordinate.x == 1000
 
     assert result.coordinate.y == 2000
+
+
+def test_process_trace_fallback_coordinates() -> None:
+    processor = create_processor()
+
+    @dataclass
+    class FallbackHeader:
+        energy_source_point: int = 1
+        source_x: int = 0
+        source_y: int = 0
+        cdp_x: int = 500000
+        cdp_y: int = 1100000
+        group_x: int = 0
+        group_y: int = 0
+        coordinate_scalar: int = 1
+        coordinate_units: int = 0
+
+    trace = FakeTrace(
+        index=0,
+        header=FallbackHeader(),
+    )
+
+    result = processor.process(trace)
+    assert result.coordinate.x == 500000
+    assert result.coordinate.y == 1100000

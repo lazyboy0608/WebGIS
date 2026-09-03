@@ -81,7 +81,7 @@ export const DashboardPage: React.FC = () => {
     setActivePolygonIds(ws.activePolygonIds);
   }, [user]);
 
-  const { files, summary, layers, loading, uploading, deleting, error, uploadFiles, deleteFiles } = useSeismicData(selectedFileIds);
+  const { files, summary, layers, loading, uploading, deleting, exporting, exportError, error, uploadFiles, deleteFiles, exportCsv } = useSeismicData(selectedFileIds);
   const selectedFiles = files.filter((file) => selectedFileIds.includes(file.id));
 
   async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -119,6 +119,15 @@ export const DashboardPage: React.FC = () => {
   function handlePolygonFinish(ring: [number, number][]) {
     setDrawnPolygonRing(ring);
     setIsDrawingPolygon(false);
+  }
+
+  async function handleExportCsv() {
+    if (selectedFileIds.length === 0 || exporting) return;
+    try {
+      await exportCsv(selectedFileIds);
+    } catch {
+      // exportError is already set by the hook
+    }
   }
 
   function handleSavePolygonClick() {
@@ -219,6 +228,16 @@ export const DashboardPage: React.FC = () => {
                 <span>{deleting ? 'Đang xóa...' : `Xóa ${selectedFiles.length} file đã chọn`}</span>
                 <b>✕</b>
               </button>
+              <button
+                type="button"
+                className={`export-button${exporting ? ' is-exporting' : ''}`}
+                disabled={exporting}
+                onClick={handleExportCsv}
+                title={`Xuất ${selectedFiles.length} file đã chọn sang CSV`}
+              >
+                <span>{exporting ? 'Đang xuất...' : `Xuất ${selectedFiles.length} file đã chọn`}</span>
+                <b>⤓</b>
+              </button>
             </>
           )}
 
@@ -315,6 +334,7 @@ export const DashboardPage: React.FC = () => {
           {selectedFileIds.length === 0 && <div className="map-empty"><span>⌁</span><strong>Select surveys to begin</strong><small>Processed geometry will appear here</small></div>}
           {loading && <div className="loading">Loading data...</div>}
           {error && <div className="error">{error}</div>}
+          {exportError && <div className="error">{exportError}</div>}
           <div className="map-legend">
             {(drawnPolygonRing || activePolygonRings.length > 0) ? (
               <>

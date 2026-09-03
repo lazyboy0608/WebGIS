@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.api.schemas.processed_data import (
+    BatchExportCsvResponse,
+    BatchExportRequest,
     DownloadUrlResponse,
     ExportCsvResponse,
     FileListResponse,
@@ -215,6 +217,35 @@ def get_raw_file_download_url(
         ) from exc
 
 
+@router.post("/export/csv/batch", response_model=BatchExportCsvResponse)
+def export_batch_csv(
+    body: BatchExportRequest,
+    query_service: ProcessedDataQueryService = Depends(get_query_service),
+    export_service: ExportService = Depends(get_export_service),
+    current_user: UserModel = Depends(get_current_user),
+) -> BatchExportCsvResponse:
+    """Export one CSV per selected SEG-Y file. Each CSV is saved to MinIO
+    and a presigned download URL is returned (1 SEG-Y = 1 CSV)."""
+    user_id = _user_id_filter(current_user)
+    # Validate all requested file IDs are accessible for this user
+    for file_id in body.ids:
+        ensure_file_accessible(file_id, query_service, user_id)
+    try:
+        raw_results = export_service.export_batch_csv(body.ids)
+        results = [ExportCsvResponse.model_validate(r) for r in raw_results]
+        return BatchExportCsvResponse(results=results, total=len(results))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export CSV batch: {exc}",
+        ) from exc
+
+
 @router.post("/{file_id}/export/csv", response_model=ExportCsvResponse)
 def export_traces_csv(
     file_id: int,
@@ -237,4 +268,3 @@ def export_traces_csv(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to export CSV: {exc}",
         ) from exc
-

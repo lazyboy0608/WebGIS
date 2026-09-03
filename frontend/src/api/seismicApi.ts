@@ -6,6 +6,21 @@ import type {
   ProcessedDataSummary,
 } from '../types/api';
 
+export type ExportCsvResult = {
+  segy_file_id: number;
+  filename: string;
+  object_name: string;
+  bucket: string;
+  size_bytes: number;
+  record_count: number;
+  download_url: string;
+};
+
+type BatchExportCsvResponse = {
+  results: ExportCsvResult[];
+  total: number;
+};
+
 export async function fetchSegyFiles(signal?: AbortSignal): Promise<FileListResponse> {
   return apiClient<FileListResponse>(`${API_DATA_SERVING_URL}/api/segy-files?offset=0&limit=500`, {
     signal,
@@ -75,4 +90,19 @@ export async function deleteSegyFiles(targetFileIds: number[]): Promise<number[]
   );
 
   return result.deleted_ids;
+}
+
+export async function exportCsvBatch(fileIds: number[]): Promise<ExportCsvResult[]> {
+  if (fileIds.length === 0) return [];
+
+  const result = await apiClient<BatchExportCsvResponse>(
+    `${API_DATA_SERVING_URL}/api/segy-files/export/csv/batch`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: fileIds }),
+    }
+  );
+
+  return result.results;
 }

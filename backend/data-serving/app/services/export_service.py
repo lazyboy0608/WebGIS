@@ -25,6 +25,8 @@ class ExportService:
         """
         Export traces coordinates for a SEG-Y file to CSV, upload to MinIO,
         and return the presigned download URL.
+
+        CSV columns: Trace, SP, Lon, Lat  (1 SEG-Y file = 1 CSV file)
         """
         segy_file = self.session.get(SegyFileModel, segy_file_id)
         if segy_file is None:
@@ -33,7 +35,6 @@ class ExportService:
         stmt = (
             select(
                 SeismicTraceModel.trace_index,
-                SeismicTraceModel.seismic_line_id,
                 SeismicShotPointModel.shot_point_number,
                 SeismicTraceModel.geometry,
             )
@@ -49,18 +50,16 @@ class ExportService:
 
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(
-            ["trace_index", "line_id", "shot_point_number", "longitude", "latitude"]
-        )
+        writer.writerow(["Trace", "SP", "Lon", "Lat"])
 
         for row in rows:
-            trace_idx, line_id, sp_num, geom = row
+            trace_idx, sp_num, geom = row
             lon, lat = "", ""
             if geom is not None:
                 shape = from_wkb(bytes(geom.data))
                 lon, lat = shape.x, shape.y
             writer.writerow(
-                [trace_idx, line_id or "", sp_num if sp_num is not None else "", lon, lat]
+                [trace_idx, sp_num if sp_num is not None else "", lon, lat]
             )
 
         csv_bytes = output.getvalue().encode("utf-8")
@@ -92,6 +91,17 @@ class ExportService:
             "record_count": len(rows),
             "download_url": download_url,
         }
+
+    def export_batch_csv(self, segy_file_ids: list[int]) -> list[dict]:
+        """
+        Export traces for each SEG-Y file in the list as a separate CSV.
+        Returns a list of export results — 1 SEG-Y file = 1 CSV file.
+        """
+        results = []
+        for file_id in segy_file_ids:
+            result = self.export_traces_csv(file_id)
+            results.append(result)
+        return results
 
     def get_raw_file_download_url(self, segy_file_id: int) -> dict:
         """

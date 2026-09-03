@@ -54,10 +54,18 @@ class ExportCsvResponse(BaseModel):
     download_url: str
 
 
+class BatchExportRequest(BaseModel):
+    ids: list[int] = Field(..., min_length=1, description="List of SEG-Y file IDs to export")
+
+
+class BatchExportCsvResponse(BaseModel):
+    results: list[ExportCsvResponse] = Field(default_factory=list)
+    total: int
+
+
 class DownloadUrlResponse(BaseModel):
     segy_file_id: int
     filename: str
     object_name: str
     bucket: str
     download_url: str
-

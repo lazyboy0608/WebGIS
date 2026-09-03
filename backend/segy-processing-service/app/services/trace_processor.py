@@ -31,12 +31,34 @@ class TraceProcessor:
 
         header = trace.header
 
+        x = getattr(header, "source_x", None) or 0
+        y = getattr(header, "source_y", None) or 0
+
+        if x == 0 and y == 0:
+            cdp_x = getattr(header, "cdp_x", None) or 0
+            cdp_y = getattr(header, "cdp_y", None) or 0
+            if cdp_x != 0 or cdp_y != 0:
+                x, y = cdp_x, cdp_y
+            else:
+                group_x = getattr(header, "group_x", None) or 0
+                group_y = getattr(header, "group_y", None) or 0
+                if group_x != 0 or group_y != 0:
+                    x, y = group_x, group_y
+
+        units = getattr(header, "coordinate_units", 1)
+        if units is None:
+            units = 1
+
+        scalar = getattr(header, "coordinate_scalar", 1)
+        if scalar is None:
+            scalar = 1
+
         coordinate = (
             self._coordinate_transformer.transform(
-                x=header.source_x,
-                y=header.source_y,
-                scalar=header.coordinate_scalar,
-                coordinate_units=header.coordinate_units,
+                x=x,
+                y=y,
+                scalar=scalar,
+                coordinate_units=units,
             )
         )
 

@@ -252,6 +252,22 @@ class SegyIOReader(SegyReader):
                 segyio.TraceField.SourceY
             ],
 
+            group_x=header[
+                segyio.TraceField.GroupX
+            ] if segyio.TraceField.GroupX in header else 0,
+
+            group_y=header[
+                segyio.TraceField.GroupY
+            ] if segyio.TraceField.GroupY in header else 0,
+
+            cdp_x=header[
+                segyio.TraceField.CDP_X
+            ] if segyio.TraceField.CDP_X in header else 0,
+
+            cdp_y=header[
+                segyio.TraceField.CDP_Y
+            ] if segyio.TraceField.CDP_Y in header else 0,
+
             coordinate_scalar=header[
                 segyio.TraceField.SourceGroupScalar
             ],

@@ -17,5 +17,11 @@ class TraceHeader:
     source_x: float | None = None
     source_y: float | None = None
 
+    group_x: float | None = None
+    group_y: float | None = None
+
+    cdp_x: float | None = None
+    cdp_y: float | None = None
+
     coordinate_scalar: int | None = None
     coordinate_units: int | None = None

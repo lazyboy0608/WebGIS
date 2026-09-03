@@ -1,6 +1,7 @@
 import { startTransition, useEffect, useState } from 'react';
 import {
   deleteSegyFiles as deleteSegyFilesApi,
+  exportCsvBatch,
   fetchSegyFiles,
   fetchSegyLines,
   fetchSegyShotPoints,
@@ -34,6 +35,8 @@ export function useSeismicData(fileIds: number[]) {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filesRefreshToken, setFilesRefreshToken] = useState(0);
 
@@ -140,5 +143,42 @@ export function useSeismicData(fileIds: number[]) {
     }
   }
 
-  return { apiBaseUrl: API_DATA_SERVING_URL, files, summary, layers, loading, uploading, deleting, error, uploadFiles, deleteFiles };
+  /**
+   * Export selected SEG-Y files to CSV: 1 file = 1 CSV.
+   * Each CSV is uploaded to MinIO processed-segy bucket.
+   * Downloads are triggered sequentially in the browser.
+   */
+  async function exportCsv(fileIds: number[]): Promise<void> {
+    if (fileIds.length === 0) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const results = await exportCsvBatch(fileIds);
+      // Trigger sequential downloads via hidden <a> elements
+      // (spacing 350 ms apart avoids popup-blocker heuristics)
+      for (let i = 0; i < results.length; i++) {
+        const { download_url, filename } = results[i];
+        await new Promise<void>((resolve) => {
+          setTimeout(() => {
+            const a = document.createElement('a');
+            a.href = download_url;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            resolve();
+          }, i * 350);
+        });
+      }
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : 'Không thể xuất file CSV';
+      setExportError(message);
+      throw reason;
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return { apiBaseUrl: API_DATA_SERVING_URL, files, summary, layers, loading, uploading, deleting, exporting, exportError, error, uploadFiles, deleteFiles, exportCsv };
 }

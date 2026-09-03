@@ -24,12 +24,17 @@ class SQLAlchemyLineRepository(LineRepository):
         if not line.coordinates:
             raise ValueError("Cannot persist a seismic line without coordinates.")
 
-        if len(line.coordinates) < 2:
-            raise ValueError("A seismic line must contain at least two coordinates.")
+        if len(line.coordinates) == 1:
+            coords_for_geometry = [
+                (line.coordinates[0].x, line.coordinates[0].y),
+                (line.coordinates[0].x, line.coordinates[0].y),
+            ]
+        else:
+            coords_for_geometry = [
+                (coordinate.x, coordinate.y) for coordinate in line.coordinates
+            ]
 
-        geometry = ShapelyLineString(
-            [(coordinate.x, coordinate.y) for coordinate in line.coordinates]
-        )
+        geometry = ShapelyLineString(coords_for_geometry)
 
         model = SeismicLineModel(
             line_id=line.line_id,
