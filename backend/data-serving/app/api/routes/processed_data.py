@@ -8,8 +8,11 @@ from app.api.deps import get_current_user
 from app.api.schemas.processed_data import (
     BatchExportCsvResponse,
     BatchExportRequest,
+    BatchExportSegyResponse,
     DownloadUrlResponse,
     ExportCsvResponse,
+    ExportSegyPolygonRequest,
+    ExportSegyResult,
     FileListResponse,
     GeoJSONFeature,
     GeoJSONFeatureCollection,
@@ -268,3 +271,40 @@ def export_traces_csv(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to export CSV: {exc}",
         ) from exc
+
+
+@router.post("/export/segy/spatial-filter", response_model=BatchExportSegyResponse)
+def export_spatial_filter_segy(
+    body: ExportSegyPolygonRequest,
+    query_service: ProcessedDataQueryService = Depends(get_query_service),
+    export_service: ExportService = Depends(get_export_service),
+    current_user: UserModel = Depends(get_current_user),
+) -> BatchExportSegyResponse:
+    """
+    Export line segments inside a spatial filter polygon to individual SEG-Y (.sgy) files.
+    Returns 1 SEG-Y export result per clipped seismic line.
+    """
+    user_id = _user_id_filter(current_user)
+    if body.file_ids:
+        for file_id in body.file_ids:
+            ensure_file_accessible(file_id, query_service, user_id)
+
+    try:
+        raw_results = export_service.export_polygon_segy(
+            polygon_ring=body.polygon_ring,
+            polygon_name=body.polygon_name,
+            file_ids=body.file_ids,
+        )
+        results = [ExportSegyResult.model_validate(r) for r in raw_results]
+        return BatchExportSegyResponse(results=results, total=len(results))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export SEG-Y polygon: {exc}",
+        ) from exc
+

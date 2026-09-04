@@ -69,3 +69,26 @@ class DownloadUrlResponse(BaseModel):
     object_name: str
     bucket: str
     download_url: str
+
+
+class ExportSegyPolygonRequest(BaseModel):
+    polygon_ring: list[list[float]] = Field(..., description="Array of [lon, lat] points forming closed ring")
+    polygon_name: str = Field(default="spatial_filter", description="Name of the polygon filter")
+    file_ids: list[int] | None = Field(default=None, description="Optional filter by file IDs")
+
+
+class ExportSegyResult(BaseModel):
+    segy_file_id: int
+    line_id: str
+    filename: str
+    object_name: str
+    bucket: str
+    size_bytes: int
+    trace_count: int
+    download_url: str
+
+
+class BatchExportSegyResponse(BaseModel):
+    results: list[ExportSegyResult] = Field(default_factory=list)
+    total: int
+

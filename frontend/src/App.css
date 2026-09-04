@@ -102,4 +102,8 @@ select { width: 100%; padding: 13px 10px; border: 1px solid #bfcac4; border-radi
 .saved-polygon-item.is-active .saved-polygon-name { font-weight: 600; color: var(--teal); }
 .saved-polygon-delete { flex-shrink: 0; padding: 8px 9px; background: none; border: none; border-left: 1px solid #d4ddd9; color: #9ab0ab; font-size: 11px; cursor: pointer; transition: color .15s, background .15s; }
 .saved-polygon-delete:hover { color: #c9302c; background: #fff5f5; }
+.saved-polygon-export { flex-shrink: 0; padding: 6px 8px; background: #e0f2fe; border: none; border-left: 1px solid #d4ddd9; color: #0284c7; font: 500 11px 'Space Grotesk', sans-serif; cursor: pointer; transition: color .15s, background .15s; }
+.saved-polygon-export:hover:not(:disabled) { color: #0369a1; background: #bae6fd; }
+.saved-polygon-export:disabled { opacity: 0.6; cursor: wait; }
+
 

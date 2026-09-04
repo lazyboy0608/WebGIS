@@ -106,3 +106,41 @@ export async function exportCsvBatch(fileIds: number[]): Promise<ExportCsvResult
 
   return result.results;
 }
+
+export type ExportSegyResult = {
+  segy_file_id: number;
+  line_id: string;
+  filename: string;
+  object_name: string;
+  bucket: string;
+  size_bytes: number;
+  trace_count: number;
+  download_url: string;
+};
+
+type BatchExportSegyResponse = {
+  results: ExportSegyResult[];
+  total: number;
+};
+
+export async function exportSegySpatialFilter(
+  polygonRing: [number, number][],
+  polygonName: string = 'spatial_filter',
+  fileIds?: number[]
+): Promise<ExportSegyResult[]> {
+  const result = await apiClient<BatchExportSegyResponse>(
+    `${API_DATA_SERVING_URL}/api/segy-files/export/segy/spatial-filter`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        polygon_ring: polygonRing,
+        polygon_name: polygonName,
+        file_ids: fileIds && fileIds.length > 0 ? fileIds : undefined,
+      }),
+    }
+  );
+
+  return result.results;
+}
+

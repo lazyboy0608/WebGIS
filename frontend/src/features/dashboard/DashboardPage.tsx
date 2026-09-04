@@ -9,6 +9,11 @@ import {
   useWorkspacePersistence,
   type SavedPolygon,
 } from '../../hooks/useWorkspacePersistence';
+import {
+  exportSegySpatialFilter,
+  type ExportSegyResult,
+} from '../../api/seismicApi';
+
 
 export const DashboardPage: React.FC = () => {
   const { user, logout } = useAuth();
@@ -165,6 +170,46 @@ export const DashboardPage: React.FC = () => {
     setActivePolygonIds((prev) => prev.filter((pid) => pid !== id));
   }
 
+  const [exportingSegyId, setExportingSegyId] = useState<string | null>(null);
+  const [segyExportError, setSegyExportError] = useState<string | null>(null);
+  const [exportModalResults, setExportModalResults] = useState<ExportSegyResult[] | null>(null);
+
+  async function handleExportPolygonSegy(poly: { id: string; name: string; ring: [number, number][] }) {
+    if (exportingSegyId) return;
+    setExportingSegyId(poly.id);
+    setSegyExportError(null);
+    try {
+      const results = await exportSegySpatialFilter(poly.ring, poly.name, selectedFileIds);
+      if (results.length === 0) {
+        setSegyExportError(`Không tìm thấy đoạn line nào nằm trong polygon "${poly.name}"`);
+      } else if (results.length === 1) {
+        const link = document.createElement('a');
+        link.href = results[0].download_url;
+        link.download = results[0].filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        results.forEach((res, index) => {
+          setTimeout(() => {
+            const link = document.createElement('a');
+            link.href = res.download_url;
+            link.download = res.filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }, index * 300);
+        });
+        setExportModalResults(results);
+      }
+    } catch (err: any) {
+      setSegyExportError(err?.message || 'Xuất file SEG-Y thất bại');
+    } finally {
+      setExportingSegyId(null);
+    }
+  }
+
+
   // Merge active saved polygon rings for map display
   const activePolygonRings = activePolygonIds
     .map((id) => savedPolygons.find((p) => p.id === id)?.ring)
@@ -301,6 +346,15 @@ export const DashboardPage: React.FC = () => {
                     </button>
                     <button
                       type="button"
+                      className="saved-polygon-export"
+                      disabled={exportingSegyId === poly.id}
+                      onClick={() => handleExportPolygonSegy(poly)}
+                      title="Xuất các line xanh dương trong polygon này ra file SEG-Y (.sgy)"
+                    >
+                      {exportingSegyId === poly.id ? '⏳' : '⤓ .sgy'}
+                    </button>
+                    <button
+                      type="button"
                       className="saved-polygon-delete"
                       onClick={() => handleDeleteSavedPolygon(poly.id)}
                       title="Xóa polygon"
@@ -312,6 +366,12 @@ export const DashboardPage: React.FC = () => {
               })}
             </div>
           )}
+          {segyExportError && (
+            <div className="error" style={{ marginTop: '8px', fontSize: '0.8rem' }}>
+              {segyExportError}
+            </div>
+          )}
+
 
           <div className="rule" />
           <p className="section-label">Map layers</p>
@@ -391,6 +451,37 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Export SEG-Y results modal */}
+      {exportModalResults && (
+        <div className="modal-backdrop" onClick={() => setExportModalResults(null)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h3>Kết quả xuất dữ liệu SEG-Y (.sgy)</h3>
+            <p>Đã tạo thành công <strong>{exportModalResults.length}</strong> file SEG-Y cho các đường line được cắt bởi polygon.</p>
+            <ul className="modal-file-list" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+              {exportModalResults.map((item, idx) => (
+                <li key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div>
+                    <strong>{item.line_id}</strong> ({item.trace_count} traces, {(item.size_bytes / 1024).toFixed(1)} KB)
+                  </div>
+                  <a
+                    href={item.download_url}
+                    download={item.filename}
+                    className="btn-save-confirm"
+                    style={{ textDecoration: 'none', padding: '4px 10px', fontSize: '0.8rem' }}
+                  >
+                    Tải về
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setExportModalResults(null)}>Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 };
+

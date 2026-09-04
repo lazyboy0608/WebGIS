@@ -54,3 +54,16 @@ def test_export_service_raw_file_download_url():
     assert result["filename"] == "survey_2026.sgy"
     assert result["object_name"] == "uploads/uuid_survey_2026.sgy"
     assert result["download_url"] == "https://minio.test/raw-segy/obj?token=raw"
+
+
+def test_export_polygon_segy_validation():
+    mock_session = MagicMock()
+    mock_storage = MagicMock()
+    service = ExportService(session=mock_session, storage_manager=mock_storage)
+
+    try:
+        service.export_polygon_segy([])
+        assert False, "Should have raised ValueError for invalid polygon ring"
+    except ValueError as exc:
+        assert "polygon_ring must contain at least 3 coordinates" in str(exc)
+
