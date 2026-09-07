@@ -14,7 +14,15 @@ from app.infrastructure.database.models.seismic_shot_point_model import (
     SeismicShotPointModel,
 )
 
+from app.infrastructure.database.models.seismic_block_model import (
+    SeismicBlockModel,
+)
+
 __all__ = [
     "UserModel",
     "SegyFileModel",
+    "SeismicLineModel",
+    "SeismicShotPointModel",
+    "SeismicTraceModel",
+    "SeismicBlockModel",
 ]

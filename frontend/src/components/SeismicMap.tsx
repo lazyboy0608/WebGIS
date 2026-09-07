@@ -12,18 +12,39 @@ import Draw from 'ol/interaction/Draw'
 import Feature from 'ol/Feature'
 import LineString from 'ol/geom/LineString'
 import Polygon from 'ol/geom/Polygon'
-import type { Geometry, LayerData } from '../types/api'
-import { clipLineStringByPolygon } from '../utils/geoClipping'
+import MultiPolygon from 'ol/geom/MultiPolygon'
+import type { GeoJSONFeatureCollection, Geometry, LayerData } from '../types/api'
+import { clipLineStringByPolygon, isPointInPolygon } from '../utils/geoClipping'
+
+export type BlockClickInfo = {
+  id: number
+  block_code: string
+  operator: string | null
+  basin_name: string | null
+  area_km2: number | null
+  geometry: Geometry | null
+  polygonRing: [number, number][]
+  coordinate: [number, number]
+  pixel: [number, number]
+  intersectingLineCount: number
+}
 
 type Props = {
   data: LayerData | null
+  blockData: GeoJSONFeatureCollection | null
   showLines: boolean
   showPoints: boolean
   showTraces: boolean
+  showBlocks: boolean
+  selectedBlockId: number | null
   isDrawingPolygon?: boolean
   drawnPolygonRing?: [number, number][] | null
   savedPolygonRings?: [number, number][][]
   onPolygonFinish?: (ring: [number, number][]) => void
+  onBlockClick?: (info: BlockClickInfo | null) => void
+  isSplittingBlock?: boolean
+  splitLineCoords?: [number, number][] | null
+  onSplitLineFinish?: (coords: [number, number][]) => void
 }
 
 type HoveredLine = {
@@ -61,12 +82,44 @@ const traceStyle = new Style({
 
 const polygonStyle = new Style({
   stroke: new Stroke({
-    color: 'rgba(23, 35, 38, 0.45)', // Nét đứt mờ hơn theo yêu cầu
+    color: 'rgba(23, 35, 38, 0.45)',
     width: 2,
     lineDash: [6, 6],
   }),
   fill: new Fill({
     color: 'rgba(23, 35, 38, 0.05)',
+  }),
+})
+
+// Phong cách hiển thị Block Polygon: viền nét đứt xanh thẫm, nền trong suốt 10-15%
+const blockNormalStyle = new Style({
+  stroke: new Stroke({
+    color: '#0284c7', // Xanh dương đậm
+    width: 2,
+    lineDash: [6, 4],
+  }),
+  fill: new Fill({
+    color: 'rgba(2, 132, 199, 0.12)', // Trong suốt 12%
+  }),
+})
+
+// Highlight Block được chọn: viền cam sáng
+const blockSelectedStyle = new Style({
+  stroke: new Stroke({
+    color: '#f97316', // Cam sáng
+    width: 3.5,
+  }),
+  fill: new Fill({
+    color: 'rgba(249, 115, 22, 0.22)',
+  }),
+})
+
+// Nét vẽ đường cắt lô (Split Line)
+const splitLineStyle = new Style({
+  stroke: new Stroke({
+    color: '#ef4444', // Đỏ
+    width: 3,
+    lineDash: [8, 6],
   }),
 })
 
@@ -81,15 +134,40 @@ function extractLineStrings(geometry: Geometry | null): [number, number][][] {
   return []
 }
 
+function extractPolygonRingFromOlFeature(feature: Feature): [number, number][] {
+  const geom = feature.getGeometry()
+  if (!geom) return []
+  const geom4326 = geom.clone().transform('EPSG:3857', 'EPSG:4326')
+  const type = geom4326.getType()
+  if (type === 'Polygon') {
+    const polyGeom = geom4326 as Polygon
+    const coords = polyGeom.getCoordinates()
+    return (coords[0] || []) as [number, number][]
+  }
+  if (type === 'MultiPolygon') {
+    const multiPolyGeom = geom4326 as MultiPolygon
+    const coords = multiPolyGeom.getCoordinates()
+    return (coords[0]?.[0] || []) as [number, number][]
+  }
+  return []
+}
+
 export function SeismicMap({
   data,
+  blockData,
   showLines,
   showPoints,
   showTraces,
+  showBlocks,
+  selectedBlockId,
   isDrawingPolygon = false,
   drawnPolygonRing = null,
   savedPolygonRings = [],
   onPolygonFinish,
+  onBlockClick,
+  isSplittingBlock = false,
+  splitLineCoords = null,
+  onSplitLineFinish,
 }: Props) {
   const targetRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
@@ -99,10 +177,32 @@ export function SeismicMap({
     outsideLines: VectorLayer<VectorSource>
     polygon: VectorLayer<VectorSource>
     savedPolygons: VectorLayer<VectorSource>
+    blocks: VectorLayer<VectorSource>
+    splitLine: VectorLayer<VectorSource>
     points: VectorLayer<VectorSource>
     traces: VectorLayer<VectorSource>
   } | null>(null)
   const [hoveredLine, setHoveredLine] = useState<HoveredLine>(null)
+
+  const onBlockClickRef = useRef(onBlockClick)
+  useEffect(() => {
+    onBlockClickRef.current = onBlockClick
+  }, [onBlockClick])
+
+  const dataRef = useRef(data)
+  useEffect(() => {
+    dataRef.current = data
+  }, [data])
+
+  const selectedBlockIdRef = useRef(selectedBlockId)
+  useEffect(() => {
+    selectedBlockIdRef.current = selectedBlockId
+    if (layersRef.current?.blocks) {
+      layersRef.current.blocks.changed()
+    }
+  }, [selectedBlockId])
+
+  const fittedDataKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!targetRef.current) return
@@ -132,6 +232,19 @@ export function SeismicMap({
       style: polygonStyle,
     })
 
+    const blocksLayer = new VectorLayer({
+      source: new VectorSource(),
+      style: (feature) => {
+        const isSelected = feature.get('id') === selectedBlockIdRef.current
+        return isSelected ? blockSelectedStyle : blockNormalStyle
+      },
+    })
+
+    const splitLineLayer = new VectorLayer({
+      source: new VectorSource(),
+      style: splitLineStyle,
+    })
+
     const points = new VectorLayer({ source: new VectorSource(), style: pointStyle })
     const traces = new VectorLayer({ source: new VectorSource(), style: traceStyle })
 
@@ -141,15 +254,18 @@ export function SeismicMap({
         new TileLayer({
           source: new XYZ({
             url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-            attributions: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community',
+            attributions:
+              'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community',
             maxZoom: 19,
           }),
         }),
+        blocksLayer,
         lines,
         insideLines,
         outsideLines,
         savedPolygonsLayer,
         polygonLayer,
+        splitLineLayer,
         points,
         traces,
       ],
@@ -163,12 +279,22 @@ export function SeismicMap({
       outsideLines,
       polygon: polygonLayer,
       savedPolygons: savedPolygonsLayer,
+      blocks: blocksLayer,
+      splitLine: splitLineLayer,
       points,
       traces,
     }
 
+    // Pointer move handler for line tooltip
     map.on('pointermove', (event) => {
       if (event.dragging) return
+
+      // Do not show line tooltip if drawing or splitting
+      const targetEl = map.getTargetElement()
+      if (targetEl.classList.contains('is-drawing') || targetEl.classList.contains('is-splitting')) {
+        return
+      }
+
       const targetLayers = [lines, insideLines, outsideLines]
       const hit = map.forEachFeatureAtPixel(
         event.pixel,
@@ -185,9 +311,7 @@ export function SeismicMap({
 
       if (!hit) {
         setHoveredLine(null)
-        if (!map.getTargetElement().classList.contains('is-drawing')) {
-          map.getTargetElement().style.cursor = ''
-        }
+        targetEl.style.cursor = ''
         return
       }
 
@@ -197,8 +321,61 @@ export function SeismicMap({
         coordinate: toLonLat(event.coordinate) as [number, number],
         pixel: event.pixel as [number, number],
       })
-      if (!map.getTargetElement().classList.contains('is-drawing')) {
-        map.getTargetElement().style.cursor = 'pointer'
+      targetEl.style.cursor = 'pointer'
+    })
+
+    // Click handler for Block selection & Popup
+    map.on('singleclick', (event) => {
+      const targetEl = map.getTargetElement()
+      if (targetEl.classList.contains('is-drawing') || targetEl.classList.contains('is-splitting')) {
+        return
+      }
+
+      const hitFeature = map.forEachFeatureAtPixel(
+        event.pixel,
+        (feature, layer) => (layer === blocksLayer ? feature : undefined),
+        { hitTolerance: 5 }
+      )
+
+      if (hitFeature && onBlockClickRef.current) {
+        const props = hitFeature.getProperties()
+        const clickLonLat = toLonLat(event.coordinate) as [number, number]
+        const ring = extractPolygonRingFromOlFeature(hitFeature as Feature)
+
+        // Calculate intersecting lines count
+        let intersectingCount = 0
+        const currentData = dataRef.current
+        if (currentData?.lines && ring.length >= 3) {
+          for (const lineFeat of currentData.lines.features) {
+            const lineStrings = extractLineStrings(lineFeat.geometry)
+            let intersects = false
+            for (const segCoords of lineStrings) {
+              for (const pt of segCoords) {
+                if (isPointInPolygon(pt, ring)) {
+                  intersects = true
+                  break
+                }
+              }
+              if (intersects) break
+            }
+            if (intersects) intersectingCount++
+          }
+        }
+
+        onBlockClickRef.current({
+          id: props.id as number,
+          block_code: (props.block_code as string) || `Block_${props.id}`,
+          operator: (props.operator as string) || null,
+          basin_name: (props.basin_name as string) || null,
+          area_km2: (props.area_km2 as number) || null,
+          geometry: (props.geometry as Geometry) || null,
+          polygonRing: ring,
+          coordinate: clickLonLat,
+          pixel: event.pixel as [number, number],
+          intersectingLineCount: intersectingCount,
+        })
+      } else if (!hitFeature && onBlockClickRef.current) {
+        onBlockClickRef.current(null)
       }
     })
 
@@ -208,7 +385,7 @@ export function SeismicMap({
     }
   }, [])
 
-  // Handle polygon drawing interaction
+  // Handle Polygon Drawing Interaction
   useEffect(() => {
     const map = mapRef.current
     const layerSet = layersRef.current
@@ -217,7 +394,7 @@ export function SeismicMap({
     const targetEl = map.getTargetElement()
     if (!isDrawingPolygon) {
       targetEl.classList.remove('is-drawing')
-      targetEl.style.cursor = ''
+      if (!isSplittingBlock) targetEl.style.cursor = ''
       return
     }
 
@@ -250,23 +427,98 @@ export function SeismicMap({
       map.removeInteraction(drawInteraction)
       targetEl.classList.remove('is-drawing')
     }
-  }, [isDrawingPolygon, onPolygonFinish])
+  }, [isDrawingPolygon, isSplittingBlock, onPolygonFinish])
 
-  // Handle polygon geometry rendering and line spatial classification
+  // Handle Split Line Drawing Interaction (2 clicks to draw a cut line across block)
+  useEffect(() => {
+    const map = mapRef.current
+    const layerSet = layersRef.current
+    if (!map || !layerSet) return
+
+    const targetEl = map.getTargetElement()
+    if (!isSplittingBlock) {
+      targetEl.classList.remove('is-splitting')
+      if (!isDrawingPolygon) targetEl.style.cursor = ''
+      return
+    }
+
+    targetEl.classList.add('is-splitting')
+    targetEl.style.cursor = 'crosshair'
+
+    const splitSource = layerSet.splitLine.getSource()
+    if (!splitSource) return
+
+    const drawLineInteraction = new Draw({
+      source: splitSource,
+      type: 'LineString',
+      maxPoints: 2, // Exactly 2 points for a straight cut line
+      style: splitLineStyle,
+    })
+
+    drawLineInteraction.on('drawend', (event) => {
+      const geometry = event.feature.getGeometry() as LineString
+      if (geometry) {
+        const transformedGeom = geometry.clone().transform('EPSG:3857', 'EPSG:4326') as LineString
+        const coords = transformedGeom.getCoordinates() as [number, number][]
+        if (onSplitLineFinish && coords.length === 2) {
+          onSplitLineFinish(coords)
+        }
+      }
+    })
+
+    map.addInteraction(drawLineInteraction)
+
+    return () => {
+      map.removeInteraction(drawLineInteraction)
+      targetEl.classList.remove('is-splitting')
+    }
+  }, [isSplittingBlock, isDrawingPolygon, onSplitLineFinish])
+
+  // Render Split Line (drawn by user or passed via props)
+  useEffect(() => {
+    const layerSet = layersRef.current
+    if (!layerSet) return
+    const splitSource = layerSet.splitLine.getSource()
+    splitSource?.clear()
+
+    if (splitLineCoords && splitLineCoords.length === 2) {
+      const lineGeom = new LineString(splitLineCoords).transform('EPSG:4326', 'EPSG:3857')
+      splitSource?.addFeature(new Feature({ geometry: lineGeom }))
+    }
+  }, [splitLineCoords])
+
+  // Render Blocks layer
   useEffect(() => {
     const layerSet = layersRef.current
     if (!layerSet) return
 
-    // --- Drawn polygon (temporary, shown while user is reviewing before save) ---
+    const blocksSource = layerSet.blocks.getSource()
+    blocksSource?.clear()
+    layerSet.blocks.setVisible(showBlocks)
+
+    if (blockData && showBlocks) {
+      const features = format.readFeatures(blockData, {
+        dataProjection: 'EPSG:4326',
+        featureProjection: 'EPSG:3857',
+      })
+      blocksSource?.addFeatures(features)
+    }
+  }, [blockData, showBlocks])
+
+  // Render Polygon Geometry and Line Spatial Classification
+  useEffect(() => {
+    const layerSet = layersRef.current
+    if (!layerSet) return
+
+    // Drawn polygon
     const polySource = layerSet.polygon.getSource()
     polySource?.clear()
-
     if (drawnPolygonRing && drawnPolygonRing.length >= 3) {
       const polyGeom = new Polygon([drawnPolygonRing]).transform('EPSG:4326', 'EPSG:3857')
       polySource?.addFeature(new Feature({ geometry: polyGeom }))
     }
 
-    // --- Saved polygons layer ---
+    // Saved polygons
     const savedPolySource = layerSet.savedPolygons.getSource()
     savedPolySource?.clear()
     for (const ring of savedPolygonRings) {
@@ -276,7 +528,6 @@ export function SeismicMap({
       }
     }
 
-    // All active rings for spatial line classification (drawn + saved active)
     const allActiveRings: [number, number][][] = [
       ...(drawnPolygonRing && drawnPolygonRing.length >= 3 ? [drawnPolygonRing] : []),
       ...savedPolygonRings.filter((r) => r.length >= 3),
@@ -296,7 +547,6 @@ export function SeismicMap({
       layerSet.insideLines.setVisible(true)
       layerSet.outsideLines.setVisible(true)
 
-      // Project all active polygon rings to EPSG:3857 for clipping
       const polyRings3857 = allActiveRings.map((ring) =>
         ring.map((c) => fromLonLat(c) as [number, number])
       )
@@ -306,7 +556,6 @@ export function SeismicMap({
         for (const lineCoords of lineStrings) {
           const lineCoords3857 = lineCoords.map((c) => fromLonLat(c) as [number, number])
 
-          // A segment is "inside" if it is inside ANY of the active polygons
           let allInside: [number, number][][] = []
           let remainingCoords: [number, number][][] = [lineCoords3857]
 
@@ -386,23 +635,36 @@ export function SeismicMap({
         const normalizedExtent = nextExtent as [number, number, number, number]
         extent = extent
           ? [
-            Math.min(extent[0], normalizedExtent[0]),
-            Math.min(extent[1], normalizedExtent[1]),
-            Math.max(extent[2], normalizedExtent[2]),
-            Math.max(extent[3], normalizedExtent[3]),
-          ]
+              Math.min(extent[0], normalizedExtent[0]),
+              Math.min(extent[1], normalizedExtent[1]),
+              Math.max(extent[2], normalizedExtent[2]),
+              Math.max(extent[3], normalizedExtent[3]),
+            ]
           : normalizedExtent
       }
     })
 
-    if (extent && mapRef.current) {
+    const dataKey = `${data?.lines?.features.length ?? 0}_${data?.shotPoints?.features.length ?? 0}_${blockData?.features.length ?? 0}`
+    if (extent && mapRef.current && fittedDataKeyRef.current !== dataKey) {
+      fittedDataKeyRef.current = dataKey
       mapRef.current.getView().fit(extent, {
         padding: [60, 60, 60, 60],
         maxZoom: 15,
         duration: 500,
       })
+    } else if (!data?.lines && blockData && showBlocks && mapRef.current && fittedDataKeyRef.current !== dataKey) {
+      const blocksSource = layerSet.blocks.getSource()
+      const bExtent = blocksSource?.getExtent()
+      if (bExtent && bExtent.every(Number.isFinite)) {
+        fittedDataKeyRef.current = dataKey
+        mapRef.current.getView().fit(bExtent as [number, number, number, number], {
+          padding: [60, 60, 60, 60],
+          maxZoom: 14,
+          duration: 500,
+        })
+      }
     }
-  }, [data, showLines, showPoints, showTraces, drawnPolygonRing, savedPolygonRings])
+  }, [data, blockData, showLines, showPoints, showTraces, showBlocks, drawnPolygonRing, savedPolygonRings])
 
   return (
     <div ref={targetRef} className="map" aria-label="Bản đồ dữ liệu địa chấn">
@@ -414,14 +676,21 @@ export function SeismicMap({
           <span className="tooltip-kicker">SEISMIC LINE</span>
           <strong>{String(hoveredLine.properties.line_id ?? hoveredLine.properties.id)}</strong>
           <div className="tooltip-grid">
-            <span>Longitude <b>{hoveredLine.coordinate[0].toFixed(6)}</b></span>
-            <span>Latitude <b>{hoveredLine.coordinate[1].toFixed(6)}</b></span>
-            <span>Traces <b>{String(hoveredLine.properties.trace_count ?? 0)}</b></span>
-            <span>Shot points <b>{String(hoveredLine.properties.shot_point_count ?? 0)}</b></span>
+            <span>
+              Longitude <b>{hoveredLine.coordinate[0].toFixed(6)}</b>
+            </span>
+            <span>
+              Latitude <b>{hoveredLine.coordinate[1].toFixed(6)}</b>
+            </span>
+            <span>
+              Traces <b>{String(hoveredLine.properties.trace_count ?? 0)}</b>
+            </span>
+            <span>
+              Shot points <b>{String(hoveredLine.properties.shot_point_count ?? 0)}</b>
+            </span>
           </div>
         </div>
       )}
     </div>
   )
 }
-

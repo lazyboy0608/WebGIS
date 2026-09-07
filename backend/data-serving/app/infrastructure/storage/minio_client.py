@@ -35,6 +35,13 @@ class MinioClientManager:
         except Exception:
             pass
 
+    def _clean_key(self, object_name: str) -> str:
+        from pathlib import Path
+        path_str = str(object_name).replace("\\", "/")
+        if ":" in path_str:
+            return Path(path_str).name
+        return path_str.lstrip("/")
+
     def upload_bytes(
         self,
         bucket_name: str,
@@ -44,7 +51,7 @@ class MinioClientManager:
     ) -> str:
         """Upload byte data to MinIO and return object name."""
         self.ensure_bucket(bucket_name)
-        clean_object_name = object_name.replace("\\", "/").lstrip("/")
+        clean_object_name = self._clean_key(object_name)
         stream = io.BytesIO(data)
         self.client.put_object(
             bucket_name=bucket_name,
@@ -66,7 +73,7 @@ class MinioClientManager:
         Generate a presigned GET URL for downloading an object.
         Optionally set response headers to force download filename.
         """
-        clean_object_name = object_name.replace("\\", "/").lstrip("/")
+        clean_object_name = self._clean_key(object_name)
         response_headers = None
         if filename:
             response_headers = {

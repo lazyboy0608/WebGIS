@@ -23,6 +23,7 @@ class Settings:
     MINIO_BUCKET_PROCESSED: str = os.getenv(
         "MINIO_BUCKET_PROCESSED", "processed-segy"
     )
+    MINIO_BUCKET_BLOCKS_RAW: str = os.getenv("MINIO_BUCKET_BLOCKS_RAW", "blocks-raw-inputs")
 
 
 settings = Settings()

@@ -141,15 +141,18 @@ class ExportService:
                 return str(candidate.resolve()), False
 
         # 3. Download from MinIO
-        raw_object_name = raw_path_str.replace("\\", "/").lstrip("/")
-        object_candidates = []
-        if raw_object_name.startswith("uploads/"):
-            object_candidates.append(raw_object_name)
+        raw_path_str = segy_file.file_path.replace("\\", "/")
+        if ":" in raw_path_str:
+            clean_object_key = Path(raw_path_str).name
         else:
-            object_candidates.append(f"uploads/{raw_object_name}")
-            object_candidates.append(raw_object_name)
-            object_candidates.append(f"uploads/{clean_filename}")
-            object_candidates.append(clean_filename)
+            clean_object_key = raw_path_str.lstrip("/")
+
+        object_candidates = []
+        object_candidates.append(f"uploads/{clean_filename}")
+        object_candidates.append(clean_filename)
+        if clean_object_key not in object_candidates:
+            object_candidates.append(clean_object_key if clean_object_key.startswith("uploads/") else f"uploads/{clean_object_key}")
+            object_candidates.append(clean_object_key)
 
         temp_raw_fd, temp_raw_path = tempfile.mkstemp(suffix=".sgy")
         os.close(temp_raw_fd)
@@ -181,10 +184,8 @@ class ExportService:
             raise ValueError(f"SEG-Y file with id={segy_file_id} not found")
 
         resolved_path, is_temp = self._resolve_raw_segy_path(segy_file)
-        object_name = segy_file.file_path.replace("\\", "/").lstrip("/")
-        if not object_name:
-            clean_name = Path(segy_file.filename).name
-            object_name = f"uploads/{clean_name}"
+        clean_filename = Path(segy_file.filename).name
+        object_name = f"uploads/{clean_filename}"
 
         # Ensure object is present in MinIO raw bucket for download
         try:
@@ -319,7 +320,28 @@ class ExportService:
                         spec.tracecount = len(inside_indices)
 
                         with segyio.create(temp_dst_path, spec) as dst:
-                            dst.text[0] = src.text[0]
+                            # Update textual header so CRS is recognized as EPSG:4326
+                            raw_text = src.text[0]
+                            if isinstance(raw_text, (bytes, bytearray)):
+                                text_str = bytes(raw_text).decode("ascii", errors="replace")
+                            else:
+                                text_str = str(raw_text)
+
+                            if re.search(r"\bEPSG\s*[:=]\s*\d+\b", text_str, flags=re.IGNORECASE):
+                                new_text_str = re.sub(
+                                    r"\bEPSG\s*[:=]\s*\d+\b",
+                                    "EPSG:4326",
+                                    text_str,
+                                    flags=re.IGNORECASE,
+                                )
+                            else:
+                                line8_rep = "C08 Projection: [EPSG:4326] WGS 84 (Geographic)".ljust(80)
+                                if len(text_str) >= 640:
+                                    new_text_str = text_str[:560] + line8_rep + text_str[640:]
+                                else:
+                                    new_text_str = text_str + "\n" + line8_rep
+
+                            dst.text[0] = new_text_str.ljust(len(text_str))
                             for k, v in src.bin.items():
                                 try:
                                     dst.bin[k] = v
@@ -339,23 +361,25 @@ class ExportService:
                                 # Store as integer milliarcseconds: scalar = -1000 → divide by 1000 to get degrees.
                                 if orig_idx in trace_lonlat:
                                     lon, lat = trace_lonlat[orig_idx]
-                                    lon_ms = int(round(lon * 1000))  # milliarcseconds
-                                    lat_ms = int(round(lat * 1000))
+                                    lon_scaled = int(round(lon * 30000))
+                                    lat_scaled = int(round(lat * 30000))
 
                                     dst.header[new_idx].update({
-                                        # Byte 71-72: coordinate scalar (SourceGroupScalar)
-                                        segyio.TraceField.SourceGroupScalar: -1000,
+                                        # Byte 71-72: coordinate scalar (SourceGroupScalar) -> -30000 (~3.7m precision, fits in int16)
+                                        segyio.TraceField.SourceGroupScalar: -30000,
                                         # Byte 69-70: elevation scalar (keep consistent)
-                                        segyio.TraceField.ElevationScalar: -1000,
+                                        segyio.TraceField.ElevationScalar: -30000,
+                                        # Byte 89-90: coordinate units (2 = Arcseconds / Geographic degrees)
+                                        segyio.TraceField.CoordinateUnits: 2,
                                         # SRCX / SRCY (bytes 73-76 / 77-80)
-                                        segyio.TraceField.SourceX: lon_ms,
-                                        segyio.TraceField.SourceY: lat_ms,
+                                        segyio.TraceField.SourceX: lon_scaled,
+                                        segyio.TraceField.SourceY: lat_scaled,
                                         # GroupX / GroupY (bytes 81-84 / 85-88)
-                                        segyio.TraceField.GroupX: lon_ms,
-                                        segyio.TraceField.GroupY: lat_ms,
+                                        segyio.TraceField.GroupX: lon_scaled,
+                                        segyio.TraceField.GroupY: lat_scaled,
                                         # CDP-X / CDP-Y (bytes 181-184 / 185-188)
-                                        segyio.TraceField.CDP_X: lon_ms,
-                                        segyio.TraceField.CDP_Y: lat_ms,
+                                        segyio.TraceField.CDP_X: lon_scaled,
+                                        segyio.TraceField.CDP_Y: lat_scaled,
                                     })
 
                     with open(temp_dst_path, "rb") as f:

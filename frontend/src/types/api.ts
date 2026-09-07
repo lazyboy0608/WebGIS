@@ -52,3 +52,49 @@ export type BatchDeleteResponse = {
   count: number
 }
 
+export type SeismicBlock = {
+  id: number
+  block_code: string
+  operator: string | null
+  basin_name: string | null
+  area_km2: number | null
+  status: 'active' | 'split'
+  parent_id: number | null
+  source_file: string | null
+  created_at: string
+  updated_at?: string
+}
+
+export type BlockUploadResponse = {
+  message: string
+  imported_count: number
+  blocks: SeismicBlock[]
+}
+
+export type BlockSplitRequest = {
+  split_line_wkt: string
+  new_block_codes?: string[]
+}
+
+/**
+ * Command Pattern — một phần tử trong Undo/Redo Stack.
+ * Lưu đủ thông tin để gọi API undo-split VÀ re-execute (redo) split.
+ */
+export type SplitCommand = {
+  /** ID của lô cha (đã bị đổi sang status='split') */
+  parentBlockId: number
+  /** Mã lô cha để hiển thị trong tooltip nút Undo */
+  parentBlockCode: string
+  /** IDs của 2 lô con vừa được tạo */
+  childIds: number[]
+  /** WKT LineString dùng để tách — cần cho Redo (re-execute) */
+  splitLineWkt: string
+  /** Tên các lô con — cần cho Redo */
+  newBlockCodes: string[]
+}
+
+/** Response từ POST /api/blocks/undo-split */
+export type UndoSplitResponse = {
+  restored_block: SeismicBlock
+  deleted_child_ids: number[]
+}

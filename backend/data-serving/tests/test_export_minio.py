@@ -52,7 +52,7 @@ def test_export_service_raw_file_download_url():
 
     assert result["segy_file_id"] == 10
     assert result["filename"] == "survey_2026.sgy"
-    assert result["object_name"] == "uploads/uuid_survey_2026.sgy"
+    assert result["object_name"] == "uploads/survey_2026.sgy"
     assert result["download_url"] == "https://minio.test/raw-segy/obj?token=raw"
 
 

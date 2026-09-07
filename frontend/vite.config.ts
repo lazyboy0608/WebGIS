@@ -17,6 +17,11 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/api/blocks/upload-zip': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+      },
       // 2. Proxy remaining API requests to Backend 2 (data-serving :8001)
       '/api': {
         target: 'http://localhost:8001',

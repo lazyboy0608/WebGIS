@@ -58,6 +58,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        version_table="alembic_version_processing",
         literal_binds=True,
         dialect_opts={
             "paramstyle": "named",
@@ -89,6 +90,7 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
+            version_table="alembic_version_processing",
         )
 
         with context.begin_transaction():

@@ -78,22 +78,36 @@ class MinioFileStorage(FileStorage):
         Resolve a stored object name to a local filesystem Path.
         If not cached locally, downloads the object from MinIO to temp storage.
         """
+        # If filename is an absolute path to a file that exists on local disk, return it directly
+        try:
+            path_obj = Path(filename)
+            if path_obj.exists() and path_obj.is_file():
+                return path_obj
+        except Exception:
+            pass
+
         raw_name = str(filename).replace("\\", "/")
         if raw_name.startswith("/"):
             raw_name = raw_name[1:]
 
-        # Find object name in MinIO
-        object_name = raw_name if raw_name.startswith("uploads/") else f"uploads/{raw_name}"
+        # Strip Windows drive letters (e.g. "D:/path/to/file.sgy" -> "file.sgy")
+        if ":" in raw_name:
+            clean_key = Path(raw_name).name
+        else:
+            clean_key = raw_name
+
+        object_name = clean_key if clean_key.startswith("uploads/") else f"uploads/{clean_key}"
         cached_filename = object_name.replace("/", "_")
         local_path = self.temp_dir / cached_filename
 
-        # Also check if raw_name exists in temp_dir directly
+        # Check if already cached in temp directory
         if not local_path.exists():
-            direct_cached = self.temp_dir / raw_name.replace("/", "_")
+            direct_cached = self.temp_dir / clean_key.replace("/", "_")
             if direct_cached.exists():
                 return direct_cached
 
         if not local_path.exists():
+            # Try object_name ("uploads/...") first
             try:
                 self.client.fget_object(
                     bucket_name=self.bucket_name,
@@ -101,20 +115,19 @@ class MinioFileStorage(FileStorage):
                     file_path=str(local_path),
                 )
             except Exception:
-                # Try raw_name as object_name directly if uploads/ failed
+                # Try clean_key directly if uploads/ failed
                 try:
                     self.client.fget_object(
                         bucket_name=self.bucket_name,
-                        object_name=raw_name,
+                        object_name=clean_key,
                         file_path=str(local_path),
                     )
                 except Exception as exc:
                     raise FileNotFoundError(
-                        f"Object '{raw_name}' not found in MinIO bucket '{self.bucket_name}': {exc}"
+                        f"Object '{clean_key}' not found in MinIO bucket '{self.bucket_name}': {exc}"
                     ) from exc
 
         return local_path
-
 
     def delete(
         self,
@@ -123,25 +136,34 @@ class MinioFileStorage(FileStorage):
         """
         Delete an object from MinIO bucket and remove any local cached copy.
         """
-        object_name = str(path).replace("\\", "/")
-        # If path is a local file path inside temp_dir or base_dir, extract the object name
-        if self.temp_dir in Path(path).resolve().parents or Path(path).exists():
-            try:
-                Path(path).unlink(missing_ok=True)
-            except Exception:
-                pass
+        path_str = str(path).replace("\\", "/")
+        if ":" in path_str:
+            clean_key = Path(path_str).name
+        else:
+            clean_key = path_str.lstrip("/")
 
-        # Try to delete from MinIO
+        # If local file exists, remove local file
         try:
-            self.client.remove_object(
-                bucket_name=self.bucket_name,
-                object_name=object_name,
-            )
+            if Path(path).exists():
+                Path(path).unlink(missing_ok=True)
         except Exception:
             pass
 
-        # Also cleanup cached file if named by object_name
-        cached_path = self.temp_dir / object_name.replace("/", "_")
+        # Remove from MinIO using clean key
+        for candidate_key in [
+            clean_key if clean_key.startswith("uploads/") else f"uploads/{clean_key}",
+            clean_key,
+        ]:
+            try:
+                self.client.remove_object(
+                    bucket_name=self.bucket_name,
+                    object_name=candidate_key,
+                )
+            except Exception:
+                pass
+
+        # Also cleanup cached file
+        cached_path = self.temp_dir / clean_key.replace("/", "_")
         if cached_path.exists():
             try:
                 cached_path.unlink(missing_ok=True)
@@ -154,7 +176,15 @@ class MinioFileStorage(FileStorage):
         expires_seconds: int = 3600,
     ) -> str:
         """Generate a presigned GET URL for direct download from MinIO."""
-        clean_object_name = str(object_name).replace("\\", "/")
+        raw_name = str(object_name).replace("\\", "/")
+        if ":" in raw_name:
+            clean_key = Path(raw_name).name
+        else:
+            clean_key = raw_name.lstrip("/")
+
+        clean_object_name = (
+            clean_key if clean_key.startswith("uploads/") else f"uploads/{clean_key}"
+        )
         return self.client.presigned_get_object(
             bucket_name=self.bucket_name,
             object_name=clean_object_name,
