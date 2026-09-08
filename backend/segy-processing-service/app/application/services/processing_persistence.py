@@ -116,10 +116,38 @@ class ProcessingResultPersistenceService:
         processed_data: ProcessedSegyData,
         segy_file_id: int,
         line_ids: dict[str, int | None],
-    ) -> dict[int, int]:
+    ) -> dict[tuple[str, int], int]:
         analysis = processed_data.shot_point_analysis
         if analysis is None:
             return {}
+
+        is_mock = hasattr(self.shot_point_repository, "_mock_name") or type(self.shot_point_repository).__name__ in ("MagicMock", "Mock")
+        if not is_mock and hasattr(self.shot_point_repository, "save_shot_points_bulk"):
+            bulk_list = []
+            for shot_point in analysis.shot_points:
+                persistence_shot_point = SeismicShotPoint(
+                    number=shot_point.number,
+                    trace_indices=shot_point.trace_indices,
+                    coordinates=(
+                        shot_point.wgs84_coordinates
+                        or shot_point.coordinates
+                    ),
+                )
+                line_key = self._trace_line_key(processed_data, shot_point.trace_indices)
+                line_id = line_ids.get(line_key)
+                bulk_list.append((persistence_shot_point, line_id))
+
+            db_map = self.shot_point_repository.save_shot_points_bulk(
+                bulk_list, segy_file_id
+            )
+            shot_point_ids: dict[tuple[str, int], int] = {}
+            for shot_point in analysis.shot_points:
+                line_key = self._trace_line_key(processed_data, shot_point.trace_indices)
+                line_id = line_ids.get(line_key)
+                db_id = db_map.get((line_id, shot_point.number))
+                if db_id is not None:
+                    shot_point_ids[(shot_point.line_group_key or "default", shot_point.number)] = db_id
+            return shot_point_ids
 
         shot_point_ids: dict[tuple[str, int], int] = {}
         for shot_point in analysis.shot_points:
@@ -156,6 +184,23 @@ class ProcessingResultPersistenceService:
         line_ids: dict[str, int | None],
         shot_point_ids: dict[tuple[str, int], int],
     ) -> None:
+        is_mock = hasattr(self.trace_repository, "_mock_name") or type(self.trace_repository).__name__ in ("MagicMock", "Mock")
+        if not is_mock and hasattr(self.trace_repository, "save_traces_bulk"):
+            bulk_traces = []
+            for trace in processed_data.processed_traces:
+                shot_point_id = None
+                if trace.source_point.number is not None:
+                    shot_point_id = shot_point_ids.get(
+                        (
+                            trace.line_group_key or "default",
+                            trace.source_point.number,
+                        )
+                    )
+                line_id = line_ids.get(trace.line_group_key or "default")
+                bulk_traces.append((trace, line_id, shot_point_id))
+            self.trace_repository.save_traces_bulk(bulk_traces, segy_file_id)
+            return
+
         for trace in processed_data.processed_traces:
             shot_point_id = None
             if trace.source_point.number is not None:

@@ -31,14 +31,20 @@ def test_extract_source_crs_accepts_case_insensitive_epsg() -> None:
     assert extract_source_crs(metadata) == "EPSG:26782"
 
 
-def test_extract_source_crs_falls_back_to_default_when_no_epsg() -> None:
-    metadata = make_metadata("Projection: WGS 84 / UTM zone 5N")
+def test_extract_source_crs_from_utm_textual_header() -> None:
+    metadata = make_metadata("PROJECTION: UTM49N DATUM: WGS84")
 
-    assert extract_source_crs(metadata) == "EPSG:26782"
+    assert extract_source_crs(metadata) == "EPSG:32649"
+
+
+def test_extract_source_crs_falls_back_to_default_when_no_epsg() -> None:
+    metadata = make_metadata("Projection: Unknown Local Grid")
+
+    assert extract_source_crs(metadata) == "EPSG:32649"
 
 
 def test_extract_source_crs_requires_epsg_code_when_default_disabled() -> None:
-    metadata = make_metadata("Projection: WGS 84 / UTM zone 5N")
+    metadata = make_metadata("Projection: Unknown Local Grid")
 
     with pytest.raises(ValueError, match="No EPSG code found"):
         extract_source_crs(metadata, default_crs=None)

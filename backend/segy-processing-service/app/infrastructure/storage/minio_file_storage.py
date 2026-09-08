@@ -1,5 +1,6 @@
 import io
 import tempfile
+import typing
 from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -69,6 +70,31 @@ class MinioFileStorage(FileStorage):
         local_cache_path.write_bytes(content)
 
         return Path(object_name)
+
+    def save_stream(
+        self,
+        filename: str,
+        stream: io.BufferedIOBase | typing.BinaryIO,
+        length: int,
+    ) -> Path:
+        """
+        Stream upload file content directly to MinIO bucket without loading full content into RAM.
+        """
+        clean_name = Path(filename).name
+        object_name = f"uploads/{uuid4().hex}_{clean_name}"
+
+        part_size = 10 * 1024 * 1024 if length > 10 * 1024 * 1024 else 5 * 1024 * 1024
+        self.client.put_object(
+            bucket_name=self.bucket_name,
+            object_name=object_name,
+            data=stream,
+            length=length,
+            content_type="application/octet-stream",
+            part_size=part_size,
+        )
+
+        return Path(object_name)
+
 
     def get_path(
         self,
@@ -149,11 +175,12 @@ class MinioFileStorage(FileStorage):
         except Exception:
             pass
 
-        # Remove from MinIO using clean key
-        for candidate_key in [
-            clean_key if clean_key.startswith("uploads/") else f"uploads/{clean_key}",
-            clean_key,
-        ]:
+        primary_key = clean_key if clean_key.startswith("uploads/") else f"uploads/{clean_key}"
+        candidate_keys = [primary_key]
+        if clean_key != primary_key:
+            candidate_keys.append(clean_key)
+
+        for candidate_key in candidate_keys:
             try:
                 self.client.remove_object(
                     bucket_name=self.bucket_name,

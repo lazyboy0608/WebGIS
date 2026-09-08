@@ -118,11 +118,26 @@ class SegyIOReader(SegyReader):
         raw_header = segy_file.text[0]
 
         if isinstance(raw_header, (bytes, bytearray)):
-            text = bytes(raw_header).decode(
-                "ascii",
-                errors="replace",
-            )
-            encoding = "ascii"
+            raw_bytes = bytes(raw_header)
+            
+            # Decode ASCII
+            text_ascii = raw_bytes.decode("ascii", errors="replace")
+            ratio_ascii = sum(1 for c in text_ascii if c.isprintable() or c in ("\n", "\r", "\t")) / max(len(text_ascii), 1)
+
+            # Decode EBCDIC (IBM cp037)
+            try:
+                text_ebcdic = raw_bytes.decode("cp037", errors="replace")
+                ratio_ebcdic = sum(1 for c in text_ebcdic if c.isprintable() or c in ("\n", "\r", "\t")) / max(len(text_ebcdic), 1)
+            except Exception:
+                ratio_ebcdic = 0.0
+                text_ebcdic = ""
+
+            if ratio_ebcdic > ratio_ascii and ratio_ebcdic > 0.75:
+                text = text_ebcdic
+                encoding = "ebcdic"
+            else:
+                text = text_ascii
+                encoding = "ascii"
         else:
             text = str(raw_header)
             encoding = "ascii"

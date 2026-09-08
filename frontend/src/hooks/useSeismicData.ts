@@ -7,6 +7,7 @@ import {
   fetchSegyShotPoints,
   fetchSegySummary,
   fetchSegyTraces,
+  subscribeSegyProgressWebSocket,
   uploadSegyFiles as uploadSegyFilesApi,
 } from '../api/seismicApi';
 import { API_DATA_SERVING_URL } from '../api/client';
@@ -40,6 +41,9 @@ export function useSeismicData(fileIds: number[]) {
   const [error, setError] = useState<string | null>(null);
   const [filesRefreshToken, setFilesRefreshToken] = useState(0);
 
+  const [progressMessage, setProgressMessage] = useState<string | null>(null);
+  const [progressPercent, setProgressPercent] = useState<number>(0);
+
   useEffect(() => {
     const controller = new AbortController();
     startTransition(() => setLoading(true));
@@ -60,9 +64,19 @@ export function useSeismicData(fileIds: number[]) {
 
     setUploading(true);
     setError(null);
+    setProgressPercent(10);
+    setProgressMessage('Truyền dữ liệu file stream tới server...');
+
+    const clientId = `client_${Date.now()}`;
+    const unsubscribe = subscribeSegyProgressWebSocket(clientId, (msg) => {
+      if (msg.message) setProgressMessage(msg.message);
+      if (typeof msg.progress_percent === 'number') setProgressPercent(msg.progress_percent);
+    });
 
     try {
       const uploadedFileIds = await uploadSegyFilesApi(filesToUpload, sourceCrs);
+      setProgressPercent(100);
+      setProgressMessage('Hoàn tất xử lý!');
       setFilesRefreshToken((token) => token + 1);
       return uploadedFileIds;
     } catch (reason) {
@@ -70,7 +84,12 @@ export function useSeismicData(fileIds: number[]) {
       setError(message);
       throw reason;
     } finally {
-      setUploading(false);
+      unsubscribe();
+      setTimeout(() => {
+        setUploading(false);
+        setProgressMessage(null);
+        setProgressPercent(0);
+      }, 600);
     }
   }
 
@@ -180,5 +199,5 @@ export function useSeismicData(fileIds: number[]) {
     }
   }
 
-  return { apiBaseUrl: API_DATA_SERVING_URL, files, summary, layers, loading, uploading, deleting, exporting, exportError, error, uploadFiles, deleteFiles, exportCsv };
+  return { apiBaseUrl: API_DATA_SERVING_URL, files, summary, layers, loading, uploading, progressMessage, progressPercent, deleting, exporting, exportError, error, uploadFiles, deleteFiles, exportCsv };
 }

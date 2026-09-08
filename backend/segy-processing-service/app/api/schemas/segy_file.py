@@ -86,3 +86,18 @@ class ProcessedPointResponse(BaseModel):
     y: float
     srid: int = 4326
 
+
+class SegyTaskStatusResponse(BaseModel):
+    """Status of an asynchronous SEG-Y upload and processing task."""
+
+    task_id: str
+    filename: str
+    status: str
+    progress_percent: int
+    message: str
+    result: object | None = None
+    error: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+

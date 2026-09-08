@@ -1,4 +1,5 @@
 from pathlib import Path
+import typing
 from uuid import uuid4
 
 from app.domain.services.file_storage import FileStorage
@@ -39,6 +40,33 @@ class LocalFileStorage(FileStorage):
         file_path.write_bytes(content)
 
         return file_path
+
+    def save_stream(
+        self,
+        filename: str,
+        stream: typing.BinaryIO,
+        length: int,
+    ) -> Path:
+        requested_path = (self.base_directory / filename).resolve()
+        if self.base_directory not in requested_path.parents:
+            raise ValueError("Filename resolves outside storage directory.")
+
+        file_path = requested_path
+        if file_path.exists():
+            file_path = file_path.with_name(
+                f"{file_path.stem}-{uuid4().hex}{file_path.suffix}"
+            )
+
+        with open(file_path, "wb") as f:
+            chunk_size = 1024 * 1024  # 1MB chunks
+            while True:
+                chunk = stream.read(chunk_size)
+                if not chunk:
+                    break
+                f.write(chunk)
+
+        return file_path
+
 
     def get_path(
         self,

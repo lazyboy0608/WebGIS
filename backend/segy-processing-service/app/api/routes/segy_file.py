@@ -1,12 +1,16 @@
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
     HTTPException,
     UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
     status,
 )
 
@@ -20,6 +24,31 @@ from app.api.dependencies import (
     get_process_segy_file_use_case,
     get_segy_file_service,
 )
+from app.infrastructure.database.session import SessionLocal
+from app.infrastructure.database.repositories.segy_file_repository import (
+    SQLAlchemySegyFileRepository,
+)
+from app.infrastructure.database.repositories.seismic_line_repository import (
+    SQLAlchemyLineRepository,
+)
+from app.infrastructure.database.repositories.seismic_shot_point_repository import (
+    SQLAlchemyShotPointRepository,
+)
+from app.infrastructure.database.repositories.seismic_trace_repository import (
+    SQLAlchemySeismicTraceRepository,
+)
+from app.application.services.processing_persistence import (
+    ProcessingResultPersistenceService,
+)
+from app.application.services.segy_processing import (
+    SegyProcessingService,
+)
+from app.services.line_builder import LineBuilder
+from app.services.line_topology_analyzer import LineTopologyAnalyzer
+from app.services.segy_validator import SegyValidator
+from app.services.shot_point_analyzer import ShotPointAnalyzer
+from app.services.trace_processor import TraceProcessor
+from app.services.wgs84_line_geometry_builder import WGS84LineGeometryBuilder
 from app.api.schemas.segy_file import (
     ProcessedPointResponse,
     SegyBatchDeleteRequest,
@@ -28,8 +57,11 @@ from app.api.schemas.segy_file import (
     SegyFileResponse,
     SegyFileUpdate,
     SegyProcessingResponse,
+    SegyTaskStatusResponse,
     SegyUploadBatchResponse,
 )
+from app.core.task_manager import get_task_manager
+from app.core.websocket_manager import ws_manager
 from app.application.use_cases.process_segy_file_use_case import (
     ProcessSegyFileUseCase,
 )
@@ -40,7 +72,10 @@ from app.domain.services.file_storage import FileStorage
 from app.infrastructure.segy.segyio_reader import SegyIOReader
 from app.services.segy_file_service import SegyFileService
 from app.services.segy_reader import SegyReaderService
-from app.services.source_crs_extractor import extract_source_crs
+from app.services.source_crs_extractor import (
+    extract_source_crs,
+    validate_and_heal_source_crs,
+)
 from app.services.segy_validator import SegyValidator
 
 router = APIRouter(
@@ -87,6 +122,132 @@ def _processing_response(
     )
 
 
+def process_stored_file_in_background(
+    task_id: str,
+    filename: str,
+    stored_path: Path,
+    file_size: int,
+    source_crs: str | None = None,
+    user_id: int | None = None,
+) -> None:
+    """
+    Background worker that runs full SEG-Y processing asynchronously (Phase 2):
+    reads metadata, validates CRS, builds geometry, persists to PostGIS,
+    and notifies WebSocket & TaskManager listeners.
+    """
+    task_mgr = get_task_manager()
+    task_mgr.update_task(
+        task_id,
+        status="PROCESSING",
+        progress_percent=35,
+        message=f"File saved, reading SEG-Y metadata for {filename}...",
+    )
+
+    with SessionLocal() as db_session:
+        file_storage = get_file_storage()
+        segy_repo = SQLAlchemySegyFileRepository(db_session)
+        service = SegyFileService(segy_repo)
+
+        reader = SegyReaderService(
+            reader=SegyIOReader(),
+            validator=SegyValidator(),
+        )
+        resolved_local_path = file_storage.get_path(str(stored_path))
+
+        try:
+            metadata = reader.read_metadata(resolved_local_path)
+            task_mgr.update_task(
+                task_id,
+                progress_percent=55,
+                message="Metadata read, cross-validating CRS...",
+            )
+
+            if source_crs:
+                resolved_source_crs = validate_and_heal_source_crs(
+                    source_crs, file_path=resolved_local_path
+                )
+            else:
+                resolved_source_crs = extract_source_crs(
+                    metadata, file_path=resolved_local_path
+                )
+
+            segy_file = service.create_file(
+                SegyFile(
+                    id=None,
+                    user_id=user_id,
+                    filename=filename,
+                    file_path=str(stored_path),
+                    file_size=file_size if file_size > 0 else 1,
+                    source_crs=resolved_source_crs,
+                    trace_count=metadata.trace_count,
+                    line_count=1,
+                    geometry=None,
+                )
+            )
+
+            if segy_file.id is None:
+                raise RuntimeError("Created SEG-Y file has no database ID")
+
+            task_mgr.update_task(
+                task_id,
+                progress_percent=75,
+                message="Processing traces and constructing line geometry...",
+            )
+
+            line_repo = SQLAlchemyLineRepository(db_session)
+            shot_point_repo = SQLAlchemyShotPointRepository(db_session)
+            trace_repo = SQLAlchemySeismicTraceRepository(db_session)
+            persistence_service = ProcessingResultPersistenceService(
+                line_repository=line_repo,
+                shot_point_repository=shot_point_repo,
+                trace_repository=trace_repo,
+            )
+
+            processing_service = SegyProcessingService(
+                segy_reader=reader,
+                trace_processor=TraceProcessor(),
+                shot_point_analyzer=ShotPointAnalyzer(),
+                line_builder=LineBuilder(),
+                topology_analyzer=LineTopologyAnalyzer(),
+                wgs84_geometry_builder=WGS84LineGeometryBuilder(),
+                file_storage=file_storage,
+            )
+
+            use_case = ProcessSegyFileUseCase(
+                processing_service=processing_service,
+                persistence_service=persistence_service,
+            )
+
+            result = use_case.execute(
+                filename=stored_path.name,
+                segy_file_id=segy_file.id,
+                source_crs=resolved_source_crs,
+            )
+            db_session.commit()
+
+            task_mgr.update_task(
+                task_id,
+                progress_percent=90,
+                message="Persisting geometry records to PostGIS...",
+            )
+
+            response = _processing_response(result, segy_file.id, filename)
+            task_mgr.update_task(
+                task_id,
+                status="COMPLETED",
+                progress_percent=100,
+                message="Processing completed successfully",
+                result=response.model_dump(),
+            )
+        except Exception as exc:
+            db_session.rollback()
+            task_mgr.update_task(task_id, status="FAILED", error=str(exc))
+            try:
+                file_storage.delete(stored_path)
+            except Exception:
+                pass
+
+
 async def _upload_and_process(
     file: UploadFile,
     source_crs: str | None,
@@ -97,6 +258,7 @@ async def _upload_and_process(
     session: Session | None = None,
     user_id: int | None = None,
     stored_paths: list[Path] | None = None,
+    task_id: str | None = None,
 ) -> SegyProcessingResponse:
     if not file.filename:
         raise HTTPException(
@@ -105,6 +267,16 @@ async def _upload_and_process(
         )
 
     filename = Path(file.filename).name
+    tid = task_id or uuid4().hex
+    task_mgr = get_task_manager()
+    task_mgr.create_task(tid, filename)
+    task_mgr.update_task(
+        tid,
+        status="UPLOADING",
+        progress_percent=10,
+        message=f"Starting streaming upload for {filename}...",
+    )
+
     existing = service.get_file_by_filename(filename)
     if existing is not None and existing.id is not None:
         summary = query_service.summary(existing.id)
@@ -112,6 +284,7 @@ async def _upload_and_process(
             summary["processed_line_count"] > 0
             or summary["processed_trace_count"] > 0
         ):
+            task_mgr.update_task(tid, status="FAILED", error="File already exists")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -120,10 +293,24 @@ async def _upload_and_process(
                 ),
             )
 
-    file_bytes = await file.read()
-    stored_path = file_storage.save(filename, file_bytes)
+    file_size = getattr(file, "size", 0) or 0
+    try:
+        stored_path = file_storage.save_stream(filename, file.file, length=file_size)
+    except Exception:
+        file.file.seek(0)
+        file_bytes = await file.read()
+        stored_path = file_storage.save(filename, file_bytes)
+        file_size = len(file_bytes)
+
     if stored_paths is not None:
         stored_paths.append(stored_path)
+
+    task_mgr.update_task(
+        tid,
+        status="PROCESSING",
+        progress_percent=35,
+        message="File saved, reading SEG-Y textual header & metadata...",
+    )
 
     try:
         reader = SegyReaderService(
@@ -132,20 +319,36 @@ async def _upload_and_process(
         )
         resolved_local_path = file_storage.get_path(str(stored_path))
         metadata = reader.read_metadata(resolved_local_path)
+
+        task_mgr.update_task(
+            tid,
+            progress_percent=55,
+            message="Metadata read, cross-validating CRS...",
+        )
+
         try:
-            resolved_source_crs = source_crs or extract_source_crs(metadata)
+            if source_crs:
+                resolved_source_crs = validate_and_heal_source_crs(
+                    source_crs, file_path=resolved_local_path
+                )
+            else:
+                resolved_source_crs = extract_source_crs(
+                    metadata, file_path=resolved_local_path
+                )
         except ValueError as exc:
+            task_mgr.update_task(tid, status="FAILED", error=str(exc))
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=str(exc),
             ) from exc
+
         segy_file = service.create_file(
             SegyFile(
                 id=None,
                 user_id=user_id,
                 filename=filename,
                 file_path=str(stored_path),
-                file_size=len(file_bytes),
+                file_size=file_size if file_size > 0 else 1,
                 source_crs=resolved_source_crs,
                 trace_count=metadata.trace_count,
                 line_count=1,
@@ -156,6 +359,12 @@ async def _upload_and_process(
         if segy_file.id is None:
             raise RuntimeError("Created SEG-Y file has no database ID")
 
+        task_mgr.update_task(
+            tid,
+            progress_percent=75,
+            message="Processing traces and constructing line geometry...",
+        )
+
         result = use_case.execute(
             filename=stored_path.name,
             segy_file_id=segy_file.id,
@@ -163,8 +372,24 @@ async def _upload_and_process(
         )
         if session is not None:
             session.commit()
-        return _processing_response(result, segy_file.id, filename)
-    except Exception:
+
+        task_mgr.update_task(
+            tid,
+            progress_percent=90,
+            message="Persisting geometry records to PostGIS...",
+        )
+
+        response = _processing_response(result, segy_file.id, filename)
+        task_mgr.update_task(
+            tid,
+            status="COMPLETED",
+            progress_percent=100,
+            message="Processing completed successfully",
+            result=response.model_dump(),
+        )
+        return response
+    except Exception as exc:
+        task_mgr.update_task(tid, status="FAILED", error=str(exc))
         file_storage.delete(stored_path)
         raise
 
@@ -429,4 +654,46 @@ def batch_delete_segy_files(
         deleted_ids=deleted_ids,
         count=len(deleted_ids),
     )
+
+
+@router.websocket("/ws/progress/{client_id}")
+async def websocket_segy_progress(
+    websocket: WebSocket,
+    client_id: str,
+):
+    await ws_manager.connect(client_id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(client_id, websocket)
+
+
+@router.get(
+    "/tasks/{task_id}",
+    response_model=SegyTaskStatusResponse,
+    summary="Lấy thông tin tiến độ xử lý file SEG-Y bất đồng bộ",
+)
+def get_segy_task_status(
+    task_id: str,
+) -> SegyTaskStatusResponse:
+    task_mgr = get_task_manager()
+    task = task_mgr.get_task(task_id)
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task with id={task_id} not found",
+        )
+    return SegyTaskStatusResponse(
+        task_id=task.task_id,
+        filename=task.filename,
+        status=task.status,
+        progress_percent=task.progress_percent,
+        message=task.message,
+        result=task.result,
+        error=task.error,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+    )
+
 

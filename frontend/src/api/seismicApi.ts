@@ -144,3 +144,56 @@ export async function exportSegySpatialFilter(
   return result.results;
 }
 
+
+export type SegyProgressMessage = {
+  type: string
+  task_id: string
+  filename: string
+  status: string
+  progress_percent: number
+  message: string
+  result?: any
+  error?: string
+  timestamp?: string
+}
+
+export function subscribeSegyProgressWebSocket(
+  clientId: string,
+  onMessage: (msg: SegyProgressMessage) => void
+): () => void {
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const wsHost = window.location.host
+  const wsUrl = `${wsProtocol}//${wsHost}/api/segy-files/ws/progress/${clientId}`
+
+  let ws: WebSocket | null = null
+  let isClosed = false
+
+  try {
+    ws = new WebSocket(wsUrl)
+    ws.onmessage = (event) => {
+      if (isClosed) return
+      try {
+        const data = JSON.parse(event.data) as SegyProgressMessage
+        onMessage(data)
+      } catch {
+        // ignore parse error
+      }
+    }
+  } catch {
+    // ignore websocket init error
+  }
+
+  return () => {
+    isClosed = true
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      ws.close()
+    }
+  }
+}
+
+export function getSegyMvtTileUrlTemplate(fileIds?: number[]): string {
+  const query = fileIds && fileIds.length > 0 ? `?file_ids=${fileIds.join(',')}` : ''
+  return `${API_DATA_SERVING_URL}/api/segy-files/mvt/{z}/{x}/{y}.pbf${query}`
+}
+
+

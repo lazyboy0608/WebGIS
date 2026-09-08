@@ -13,6 +13,11 @@ import Feature from 'ol/Feature'
 import LineString from 'ol/geom/LineString'
 import Polygon from 'ol/geom/Polygon'
 import MultiPolygon from 'ol/geom/MultiPolygon'
+import { getCenter } from 'ol/extent'
+import VectorTileLayer from 'ol/layer/VectorTile'
+import VectorTileSource from 'ol/source/VectorTile'
+import MVT from 'ol/format/MVT'
+import { getSegyMvtTileUrlTemplate } from '../api/seismicApi'
 import type { GeoJSONFeatureCollection, Geometry, LayerData } from '../types/api'
 import { clipLineStringByPolygon, isPointInPolygon } from '../utils/geoClipping'
 
@@ -45,6 +50,8 @@ type Props = {
   isSplittingBlock?: boolean
   splitLineCoords?: [number, number][] | null
   onSplitLineFinish?: (coords: [number, number][]) => void
+  focusedBlock?: { code: string; timestamp: number } | null
+  mvtFileIds?: number[]
 }
 
 type HoveredLine = {
@@ -66,17 +73,15 @@ const outsideLineHoverStyle = new Style({ stroke: new Stroke({ color: '#991b1b',
 
 const pointStyle = new Style({
   image: new CircleStyle({
-    radius: 5,
+    radius: 4,
     fill: new Fill({ color: '#1d7a8c' }),
-    stroke: new Stroke({ color: '#fff', width: 1.5 }),
   }),
 })
 
 const traceStyle = new Style({
   image: new CircleStyle({
-    radius: 3,
+    radius: 2.5,
     fill: new Fill({ color: '#f3a712' }),
-    stroke: new Stroke({ color: '#fff', width: 1 }),
   }),
 })
 
@@ -168,6 +173,8 @@ export function SeismicMap({
   isSplittingBlock = false,
   splitLineCoords = null,
   onSplitLineFinish,
+  focusedBlock = null,
+  mvtFileIds = [],
 }: Props) {
   const targetRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
@@ -181,6 +188,7 @@ export function SeismicMap({
     splitLine: VectorLayer<VectorSource>
     points: VectorLayer<VectorSource>
     traces: VectorLayer<VectorSource>
+    mvt: VectorTileLayer
   } | null>(null)
   const [hoveredLine, setHoveredLine] = useState<HoveredLine>(null)
 
@@ -201,6 +209,20 @@ export function SeismicMap({
       layersRef.current.blocks.changed()
     }
   }, [selectedBlockId])
+
+  const showLinesRef = useRef(showLines)
+  const showPointsRef = useRef(showPoints)
+  const showTracesRef = useRef(showTraces)
+
+  useEffect(() => { showLinesRef.current = showLines }, [showLines])
+  useEffect(() => { showPointsRef.current = showPoints }, [showPoints])
+  useEffect(() => { showTracesRef.current = showTraces }, [showTraces])
+
+  useEffect(() => {
+    if (layersRef.current?.mvt) {
+      layersRef.current.mvt.changed()
+    }
+  }, [showLines, showPoints, showTraces])
 
   const fittedDataKeyRef = useRef<string | null>(null)
 
@@ -248,6 +270,21 @@ export function SeismicMap({
     const points = new VectorLayer({ source: new VectorSource(), style: pointStyle })
     const traces = new VectorLayer({ source: new VectorSource(), style: traceStyle })
 
+    const mvtLayer = new VectorTileLayer({
+      source: new VectorTileSource({
+        format: new MVT(),
+        url: getSegyMvtTileUrlTemplate(mvtFileIds),
+      }),
+      visible: Boolean(mvtFileIds && mvtFileIds.length > 0),
+      style: (feature) => {
+        const layerName = feature.get('layer')
+        if (layerName === 'traces') return showTracesRef.current ? traceStyle : undefined
+        if (layerName === 'shot_points') return showPointsRef.current ? pointStyle : undefined
+        if (layerName === 'lines') return showLinesRef.current ? defaultLineStyle : undefined
+        return undefined
+      },
+    })
+
     const map = new Map({
       target: targetRef.current,
       layers: [
@@ -260,6 +297,7 @@ export function SeismicMap({
           }),
         }),
         blocksLayer,
+        mvtLayer,
         lines,
         insideLines,
         outsideLines,
@@ -283,6 +321,7 @@ export function SeismicMap({
       splitLine: splitLineLayer,
       points,
       traces,
+      mvt: mvtLayer,
     }
 
     // Pointer move handler for line tooltip
@@ -618,9 +657,15 @@ export function SeismicMap({
       }
     }
 
+    const hasMvt = Boolean(mvtFileIds && mvtFileIds.length > 0)
+
     entries.forEach(([, collection, layer, visible]) => {
       const source = layer.getSource()
       source?.clear()
+      if (hasMvt) {
+        layer.setVisible(false)
+        return
+      }
       layer.setVisible(visible)
       if (!collection || !visible) return
 
@@ -665,6 +710,88 @@ export function SeismicMap({
       }
     }
   }, [data, blockData, showLines, showPoints, showTraces, showBlocks, drawnPolygonRing, savedPolygonRings])
+
+  // Update MVT Vector Tile Source when mvtFileIds changes
+  useEffect(() => {
+    const layerSet = layersRef.current
+    if (!layerSet?.mvt) return
+    if (mvtFileIds && mvtFileIds.length > 0) {
+      layerSet.mvt.setSource(
+        new VectorTileSource({
+          format: new MVT(),
+          url: getSegyMvtTileUrlTemplate(mvtFileIds),
+        })
+      )
+      layerSet.mvt.setVisible(true)
+    } else {
+      layerSet.mvt.setVisible(false)
+    }
+  }, [mvtFileIds])
+
+  // Focus & Zoom to searched block feature
+  useEffect(() => {
+    if (!focusedBlock?.code || !mapRef.current || !layersRef.current?.blocks) return
+    const blocksSource = layersRef.current.blocks.getSource()
+    if (!blocksSource) return
+
+    const targetCode = focusedBlock.code.trim().toLowerCase()
+    const feat = blocksSource.getFeatures().find((f) => {
+      const code = f.get('block_code')
+      return code && code.toString().toLowerCase() === targetCode
+    })
+
+    if (feat && onBlockClickRef.current) {
+      const geom = feat.getGeometry()
+      if (geom) {
+        const extent = geom.getExtent()
+        mapRef.current.getView().fit(extent, {
+          padding: [100, 100, 100, 100],
+          maxZoom: 13,
+          duration: 500,
+        })
+
+        const center3857 = getCenter(extent)
+        const pixel = mapRef.current.getPixelFromCoordinate(center3857) || [window.innerWidth / 2, window.innerHeight / 2]
+        const clickLonLat = toLonLat(center3857) as [number, number]
+        const ring = extractPolygonRingFromOlFeature(feat)
+
+        const props = feat.getProperties()
+
+        // Calculate intersecting lines count
+        let intersectingCount = 0
+        const currentData = dataRef.current
+        if (currentData?.lines && ring.length >= 3) {
+          for (const lineFeat of currentData.lines.features) {
+            const lineStrings = extractLineStrings(lineFeat.geometry)
+            let intersects = false
+            for (const segCoords of lineStrings) {
+              for (const pt of segCoords) {
+                if (isPointInPolygon(pt, ring)) {
+                  intersects = true
+                  break
+                }
+              }
+              if (intersects) break
+            }
+            if (intersects) intersectingCount++
+          }
+        }
+
+        onBlockClickRef.current({
+          id: props.id as number,
+          block_code: (props.block_code as string) || `Block_${props.id}`,
+          operator: (props.operator as string) || null,
+          basin_name: (props.basin_name as string) || null,
+          area_km2: (props.area_km2 as number) || null,
+          geometry: (props.geometry as Geometry) || null,
+          polygonRing: ring,
+          coordinate: clickLonLat,
+          pixel: pixel as [number, number],
+          intersectingLineCount: intersectingCount,
+        })
+      }
+    }
+  }, [focusedBlock?.timestamp])
 
   return (
     <div ref={targetRef} className="map" aria-label="Bản đồ dữ liệu địa chấn">

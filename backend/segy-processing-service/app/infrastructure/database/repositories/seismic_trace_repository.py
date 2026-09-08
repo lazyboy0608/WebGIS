@@ -44,3 +44,36 @@ class SQLAlchemySeismicTraceRepository(TraceRepository):
         )
 
         self.session.add(model)
+
+    def save_traces_bulk(
+        self,
+        traces: list[tuple[ProcessedTrace, int | None, int | None]],
+        segy_file_id: int,
+        batch_size: int = 5000,
+    ) -> None:
+        """Bulk save seismic traces in memory-efficient batches."""
+        if not traces:
+            return
+
+        models: list[SeismicTraceModel] = []
+        for trace, seismic_line_id, shot_point_id in traces:
+            coord = trace.wgs84_coordinate or trace.coordinate
+            if coord is None:
+                continue
+            geom = WKTElement(f"POINT({coord.x} {coord.y})", srid=4326)
+            models.append(
+                SeismicTraceModel(
+                    trace_index=trace.trace_index,
+                    segy_file_id=segy_file_id,
+                    seismic_line_id=seismic_line_id,
+                    shot_point_id=shot_point_id,
+                    geometry=geom,
+                )
+            )
+            if len(models) >= batch_size:
+                self.session.bulk_save_objects(models)
+                models.clear()
+
+        if models:
+            self.session.bulk_save_objects(models)
+        self.session.flush()

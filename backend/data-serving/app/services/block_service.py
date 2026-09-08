@@ -1,5 +1,7 @@
+import io
 import json
 from typing import Any, Dict, List, Optional
+import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -185,4 +187,49 @@ class BlockService:
         self.session.refresh(parent_block)
 
         return parent_block, deleted_child_ids
+
+    def export_block_excel(self, block_id: int) -> tuple[bytes, str]:
+        """
+        Trích xuất tất cả các điểm đỉnh ranh giới Lô địa chấn (Block) qua PostGIS ST_DumpPoints
+        và đóng gói thành file Excel (.xlsx) với các cột [X, Y, Block, Basin].
+        """
+        parent_block = self.get_block_by_id(block_id)
+        if not parent_block:
+            raise ValueError(f"Không tìm thấy Lô địa chấn với id={block_id}")
+
+        dump_sql = text("""
+            SELECT 
+                ST_X((dp).geom) AS x,
+                ST_Y((dp).geom) AS y,
+                b.block_code AS block,
+                b.basin_name AS basin
+            FROM seismic_blocks b,
+                 LATERAL ST_DumpPoints(b.geometry) AS dp
+            WHERE b.id = :block_id
+            ORDER BY (dp).path;
+        """)
+
+        rows = self.session.execute(dump_sql, {"block_id": block_id}).fetchall()
+        if not rows:
+            raise ValueError(f"Lô địa chấn id={block_id} không có dữ liệu tọa độ không gian.")
+
+        rows_data = []
+        for r in rows:
+            rows_data.append({
+                "X": float(r.x) if r.x is not None else None,
+                "Y": float(r.y) if r.y is not None else None,
+                "Block": r.block or parent_block.block_code,
+                "Basin": r.basin or parent_block.basin_name or "",
+            })
+
+        df = pd.DataFrame(rows_data, columns=["X", "Y", "Block", "Basin"])
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Blk")
+        output.seek(0)
+
+        clean_code = (parent_block.block_code or f"Block_{block_id}").replace("/", "-").replace("&", "_")
+        filename = f"Block_{clean_code}_Coordinates.xlsx"
+        return output.getvalue(), filename
 

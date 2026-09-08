@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import BinaryIO
 
 
 class FileStorage(ABC):
@@ -13,6 +14,17 @@ class FileStorage(ABC):
     ) -> Path:
         """Save file content and return its stored path."""
         raise NotImplementedError
+
+    def save_stream(
+        self,
+        filename: str,
+        stream: BinaryIO,
+        length: int,
+    ) -> Path:
+        """Save file stream and return its stored path."""
+        # Default fallback reads stream content if not overridden
+        return self.save(filename, stream.read())
+
 
     @abstractmethod
     def delete(

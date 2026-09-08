@@ -73,4 +73,33 @@ export const blocksApi = {
       body: JSON.stringify({ parent_block_id: parentBlockId }),
     })
   },
+
+  /**
+   * Tải về dữ liệu ranh giới (X, Y, Block, Basin) dưới dạng file Excel (.xlsx)
+   */
+  exportBlockExcel: async (blockId: number, blockCode: string): Promise<void> => {
+    const response = await fetch(`/api/blocks/${blockId}/export-excel`)
+    if (!response.ok) {
+      let errorMsg = `Tải dữ liệu Excel thất bại (${response.status})`
+      try {
+        const errJson = await response.json()
+        if (errJson.detail) errorMsg = errJson.detail
+      } catch {
+        // use default fallback message
+      }
+      throw new Error(errorMsg)
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const cleanCode = (blockCode || `Block_${blockId}`).replace(/[\/\&]/g, '_')
+    a.download = `Block_${cleanCode}_Coordinates.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+  },
 }
+

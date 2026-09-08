@@ -1,5 +1,7 @@
+import io
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.schemas.block import (
@@ -130,3 +132,36 @@ def undo_split_block(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Lỗi hệ thống khi hoàn tác tách Lô: {str(e)}",
         )
+
+
+@router.get(
+    "/{block_id}/export-excel",
+    summary="Xuất dữ liệu ranh giới Lô (X, Y, Block, Basin) ra file Excel (.xlsx)",
+)
+def export_block_excel(
+    block_id: int,
+    service: BlockService = Depends(get_block_service),
+) -> StreamingResponse:
+    """
+    Truy vấn PostGIS bằng ST_DumpPoints để trích xuất danh sách các điểm đỉnh (X, Y)
+    của Lô địa chấn, đóng gói thành file Excel (.xlsx) và stream trực tiếp về máy người dùng.
+    """
+    try:
+        excel_bytes, filename = service.export_block_excel(block_id)
+        return StreamingResponse(
+            io.BytesIO(excel_bytes),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+    except ValueError as e:
+        http_status = status.HTTP_404_NOT_FOUND if "Không tìm thấy" in str(e) else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=http_status, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi hệ thống khi xuất Excel Lô địa chấn: {str(e)}",
+        )
+

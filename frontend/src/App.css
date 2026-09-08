@@ -226,6 +226,25 @@ select { width: 100%; padding: 13px 10px; border: 1px solid #bfcac4; border-radi
   flex-direction: column;
   gap: 6px;
 }
+.btn-export-excel-block {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #2563eb;
+  background: #3b82f6;
+  color: white;
+  font: 600 12px 'Space Grotesk', sans-serif;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-export-excel-block:hover:not(:disabled) {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+.btn-export-excel-block:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
 .btn-filter-block {
   width: 100%;
   padding: 8px 10px;
@@ -562,3 +581,169 @@ select { width: 100%; padding: 13px 10px; border: 1px solid #bfcac4; border-radi
   box-shadow: 0 2px 8px rgba(0,0,0,0.35);
   z-index: 10;
 }
+
+/* ── Block Search Bar ─────────────────────────────────────────── */
+.block-search-container {
+  position: relative;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.block-search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.block-search-input {
+  width: 100%;
+  padding: 9px 30px 9px 10px;
+  border: 1px solid #bfcac4;
+  border-radius: 2px;
+  background: #ffffff;
+  color: var(--ink);
+  font: 13px 'Space Grotesk', sans-serif;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.block-search-input:focus {
+  outline: none;
+  border-color: var(--orange);
+  box-shadow: 0 0 0 2px rgba(228, 87, 46, 0.15);
+}
+
+.block-search-icon {
+  position: absolute;
+  right: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.block-search-clear-btn {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.block-search-clear-btn:hover {
+  color: var(--orange);
+}
+
+.block-search-suggestions {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0;
+  right: 0;
+  z-index: 150;
+  max-height: 210px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  box-shadow: 0 4px 12px rgba(23, 35, 38, 0.12);
+}
+
+.block-search-suggestions li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.block-search-suggestions li:hover {
+  background: #f0f7f8;
+  color: var(--teal);
+}
+
+.block-search-suggestions .block-icon {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.block-search-error {
+  margin-top: 4px;
+  color: #a33c27;
+  font: 11px 'DM Mono', monospace;
+}
+
+/* ── Real-Time Async SEG-Y Upload Progress Overlay ── */
+.upload-progress-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-progress-box {
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 22px 26px;
+  width: 440px;
+  max-width: 90vw;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.upload-progress-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.upload-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #e2e8f0;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: upload-spin 0.8s linear infinite;
+}
+
+@keyframes upload-spin {
+  to { transform: rotate(360deg); }
+}
+
+.upload-progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background: #f1f5f9;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.upload-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.upload-progress-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #64748b;
+}
+

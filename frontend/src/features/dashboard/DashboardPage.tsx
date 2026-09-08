@@ -66,8 +66,72 @@ export const DashboardPage: React.FC = () => {
   const [uploadingBlocks, setUploadingBlocks] = useState<boolean>(false)
   const [blockError, setBlockError] = useState<string | null>(null)
   const [selectedBlockInfo, setSelectedBlockInfo] = useState<BlockClickInfo | null>(null)
+  
+  // ── Block Search States & Handlers ─────────────────────────────────────────
+  const [blockSearchQuery, setBlockSearchQuery] = useState('')
+  const [showBlockSuggestions, setShowBlockSuggestions] = useState(false)
+  const [blockSearchError, setBlockSearchError] = useState<string | null>(null)
+  const [focusedBlock, setFocusedBlock] = useState<{ code: string; timestamp: number } | null>(null)
+
+  const matchingBlockSuggestions = useMemo(() => {
+    if (!blockSearchQuery.trim() || !blockGeoJSON?.features) return []
+    const query = blockSearchQuery.trim().toLowerCase()
+    return blockGeoJSON.features
+      .map((f) => f.properties?.block_code as string)
+      .filter((code): code is string => Boolean(code) && code.toLowerCase().includes(query))
+      .filter((value, index, self) => self.indexOf(value) === index)
+      .slice(0, 8)
+  }, [blockSearchQuery, blockGeoJSON])
+
+  function handleExecuteBlockSearch(targetQuery: string) {
+    const query = targetQuery.trim()
+    if (!query) return
+    setBlockSearchError(null)
+
+    if (!blockGeoJSON?.features || blockGeoJSON.features.length === 0) {
+      setBlockSearchError('Chưa có dữ liệu Lô địa chấn.')
+      return
+    }
+
+    const feat =
+      blockGeoJSON.features.find((f) => {
+        const code = f.properties?.block_code
+        return code && code.toString().toLowerCase() === query.toLowerCase()
+      }) ||
+      blockGeoJSON.features.find((f) => {
+        const code = f.properties?.block_code
+        return code && code.toString().toLowerCase().includes(query.toLowerCase())
+      })
+
+    if (!feat) {
+      setBlockSearchError(`Không tìm thấy lô với mã "${query}"`)
+      return
+    }
+
+    const foundCode = feat.properties?.block_code as string
+    setBlockSearchQuery(foundCode)
+    setShowBlockSuggestions(false)
+    if (!showBlocks) {
+      setShowBlocks(true)
+    }
+    setFocusedBlock({ code: foundCode, timestamp: Date.now() })
+  }
+
   // Draggable Popup position state
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null)
+  const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false)
+
+  const handleExportBlockExcel = async (blockInfo: BlockClickInfo) => {
+    if (!blockInfo?.id) return
+    try {
+      setIsExportingExcel(true)
+      await blocksApi.exportBlockExcel(blockInfo.id, blockInfo.block_code)
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi tải file Excel')
+    } finally {
+      setIsExportingExcel(false)
+    }
+  }
   const isDraggingRef = useRef<boolean>(false)
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; popupX: number; popupY: number }>({
     mouseX: 0,
@@ -205,6 +269,8 @@ export const DashboardPage: React.FC = () => {
     layers,
     loading,
     uploading,
+    progressMessage,
+    progressPercent,
     deleting,
     exporting,
     exportError,
@@ -690,6 +756,68 @@ export const DashboardPage: React.FC = () => {
           )}
 
           <div className="rule" />
+          <p className="section-label">Tìm kiếm lô địa chấn</p>
+          <div className="block-search-container">
+            <div className="block-search-input-wrapper">
+              <input
+                type="text"
+                className="block-search-input"
+                placeholder="Nhập mã lô (ví dụ: MVHN-01KT)..."
+                value={blockSearchQuery}
+                onChange={(e) => {
+                  setBlockSearchQuery(e.target.value)
+                  setShowBlockSuggestions(true)
+                  setBlockSearchError(null)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleExecuteBlockSearch(blockSearchQuery)
+                  }
+                }}
+                onFocus={() => setShowBlockSuggestions(true)}
+              />
+              {blockSearchQuery ? (
+                <button
+                  type="button"
+                  className="block-search-clear-btn"
+                  onClick={() => {
+                    setBlockSearchQuery('')
+                    setBlockSearchError(null)
+                    setShowBlockSuggestions(false)
+                  }}
+                  title="Xóa tìm kiếm"
+                >
+                  ✕
+                </button>
+              ) : (
+                <span className="block-search-icon">🔍</span>
+              )}
+            </div>
+
+            {showBlockSuggestions && matchingBlockSuggestions.length > 0 && (
+              <ul className="block-search-suggestions">
+                {matchingBlockSuggestions.map((blockCode) => (
+                  <li
+                    key={blockCode}
+                    onClick={() => {
+                      setBlockSearchQuery(blockCode)
+                      setShowBlockSuggestions(false)
+                      handleExecuteBlockSearch(blockCode)
+                    }}
+                  >
+                    <span className="block-icon">📦</span>
+                    <strong>{blockCode}</strong>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {blockSearchError && (
+              <div className="block-search-error">{blockSearchError}</div>
+            )}
+          </div>
+
+          <div className="rule" />
           <p className="section-label">Map layers</p>
           <label className="toggle">
             <input
@@ -817,6 +945,8 @@ export const DashboardPage: React.FC = () => {
             isSplittingBlock={isSplittingBlock}
             splitLineCoords={splitLineCoords}
             onSplitLineFinish={handleSplitLineFinish}
+            focusedBlock={focusedBlock}
+            mvtFileIds={selectedFileIds}
           />
 
           {/* POPUP FOR CLICKED BLOCK */}
@@ -868,6 +998,14 @@ export const DashboardPage: React.FC = () => {
               <div className="block-popup-actions">
                 <button
                   type="button"
+                  className="btn-export-excel-block"
+                  onClick={() => handleExportBlockExcel(selectedBlockInfo)}
+                  disabled={isExportingExcel}
+                >
+                  {isExportingExcel ? '⏳ Đang xuất...' : '📊 Tải về dữ liệu block này'}
+                </button>
+                <button
+                  type="button"
                   className="btn-filter-block"
                   onClick={() => handleFilterByBlock(selectedBlockInfo)}
                 >
@@ -889,6 +1027,26 @@ export const DashboardPage: React.FC = () => {
               <span>⌁</span>
               <strong>Select surveys or upload blocks</strong>
               <small>Processed geometry will appear here</small>
+            </div>
+          )}
+          {uploading && (
+            <div className="upload-progress-overlay">
+              <div className="upload-progress-box">
+                <div className="upload-progress-header">
+                  <span className="upload-spinner" />
+                  <strong>Đang xử lý dữ liệu SEG-Y...</strong>
+                </div>
+                <div className="upload-progress-bar-container">
+                  <div
+                    className="upload-progress-bar-fill"
+                    style={{ width: `${Math.max(progressPercent, 10)}%` }}
+                  />
+                </div>
+                <div className="upload-progress-status">
+                  <small>{progressMessage || 'Đang stream dữ liệu lên server...'}</small>
+                  <span>{progressPercent}%</span>
+                </div>
+              </div>
             </div>
           )}
           {loading && <div className="loading">Loading data...</div>}

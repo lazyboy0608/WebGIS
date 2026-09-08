@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.auth import router as auth_router
 from app.api.routes.block import router as block_router
 from app.api.routes.health import router as health_router
+from app.api.routes.mvt import router as mvt_router
 from app.api.routes.processed_data import router as processed_data_router
 
 app = FastAPI(
@@ -29,6 +30,7 @@ app.include_router(health_router)
 app.include_router(processed_data_router)
 app.include_router(auth_router)
 app.include_router(block_router)
+app.include_router(mvt_router)
 
 
 if __name__ == "__main__":
