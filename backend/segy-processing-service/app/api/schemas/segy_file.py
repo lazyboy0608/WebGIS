@@ -55,6 +55,7 @@ class SegyProcessingResponse(BaseModel):
     line_count: int = 1
     topology_continuous: bool
     geometry_srid: int | None = None
+    task_id: str | None = None
     points: list["ProcessedPointResponse"] = Field(default_factory=list)
 
 

@@ -82,6 +82,7 @@ class SeismicBlockModel(Base):
     __tablename__ = "seismic_blocks"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     block_code: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     operator: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     basin_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -92,4 +93,5 @@ class SeismicBlockModel(Base):
     geometry = mapped_column(Geometry(geometry_type="POLYGON", srid=4326, spatial_index=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
 

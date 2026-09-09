@@ -1,7 +1,7 @@
 /**
  * Utility functions for exact spatial geometry operations:
- * - Point-in-Polygon test combining Non-Zero Winding Number and Even-Odd Ray Casting
- * - Segment-polygon edge intersection calculations
+ * - Point-in-Polygon test using clean Even-Odd Ray Casting
+ * - Exact 2D Segment-polygon edge intersection calculations
  * - Line clipping and classification into inside (blue) and outside (red) paths.
  */
 
@@ -11,51 +11,20 @@ export function isPointInPolygon(
 ): boolean {
   if (!polygon || polygon.length < 3) return false
 
-  // Ensure polygon ring is closed for iteration
-  const poly = [...polygon]
-  const first = poly[0]
-  const last = poly[poly.length - 1]
-  if (first[0] !== last[0] || first[1] !== last[1]) {
-    poly.push(first)
-  }
-
   const [px, py] = point
-  let windingNumber = 0
-  let evenOddInside = false
+  let inside = false
 
-  for (let i = 0; i < poly.length - 1; i++) {
-    const [x1, y1] = poly[i]
-    const [x2, y2] = poly[i + 1]
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i]
+    const [xj, yj] = polygon[j]
 
-    // Even-Odd Ray Casting
     const intersect =
-      y1 > py !== y2 > py &&
-      px < ((x2 - x1) * (py - y1)) / (y2 - y1 + 1e-15) + x1
-    if (intersect) evenOddInside = !evenOddInside
-
-    // Non-Zero Winding Number
-    if (y1 <= py) {
-      if (y2 > py) {
-        const isLeft = (x2 - x1) * (py - y1) - (px - x1) * (y2 - y1)
-        if (isLeft > 1e-12) {
-          windingNumber++
-        } else if (Math.abs(isLeft) <= 1e-12) {
-          return true
-        }
-      }
-    } else {
-      if (y2 <= py) {
-        const isLeft = (x2 - x1) * (py - y1) - (px - x1) * (y2 - y1)
-        if (isLeft < -1e-12) {
-          windingNumber--
-        } else if (Math.abs(isLeft) <= 1e-12) {
-          return true
-        }
-      }
-    }
+      yi > py !== yj > py &&
+      px < ((xj - xi) * (py - yi)) / (yj - yi) + xi
+    if (intersect) inside = !inside
   }
 
-  return windingNumber !== 0 || evenOddInside
+  return inside
 }
 
 interface IntersectionResult {
@@ -74,18 +43,26 @@ function getSegmentIntersection(
   const [x3, y3] = p3
   const [x4, y4] = p4
 
-  const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1)
+  const rx = x2 - x1
+  const ry = y2 - y1
+  const sx = x4 - x3
+  const sy = y4 - y3
+
+  const denom = rx * sy - ry * sx
   if (Math.abs(denom) < 1e-12) return null // Parallel or collinear
 
-  const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom
-  const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom
+  const qx = x3 - x1
+  const qy = y3 - y1
 
-  const eps = 1e-10
-  if (ua >= -eps && ua <= 1 + eps && ub >= -eps && ub <= 1 + eps) {
-    const t = Math.max(0, Math.min(1, ua))
-    const ix = x1 + t * (x2 - x1)
-    const iy = y1 + t * (y2 - y1)
-    return { point: [ix, iy], t }
+  const t = (qx * sy - qy * sx) / denom
+  const u = (qx * ry - qy * rx) / denom
+
+  const eps = 1e-9
+  if (t >= -eps && t <= 1 + eps && u >= -eps && u <= 1 + eps) {
+    const tClamped = Math.max(0, Math.min(1, t))
+    const ix = x1 + tClamped * rx
+    const iy = y1 + tClamped * ry
+    return { point: [ix, iy], t: tClamped }
   }
 
   return null
@@ -123,7 +100,7 @@ export function clipLineStringByPolygon(
     isInside: boolean
   ) => {
     // Skip tiny zero-length sub-segments
-    if (Math.hypot(endPt[0] - startPt[0], endPt[1] - startPt[1]) < 1e-12) {
+    if (Math.hypot(endPt[0] - startPt[0], endPt[1] - startPt[1]) < 1e-7) {
       return
     }
 
@@ -139,7 +116,7 @@ export function clipLineStringByPolygon(
         currentInsidePath.push(startPt)
       } else {
         const lastPt = currentInsidePath[currentInsidePath.length - 1]
-        if (Math.hypot(startPt[0] - lastPt[0], startPt[1] - lastPt[1]) > 1e-12) {
+        if (Math.hypot(startPt[0] - lastPt[0], startPt[1] - lastPt[1]) > 1e-7) {
           currentInsidePath.push(startPt)
         }
       }
@@ -156,7 +133,7 @@ export function clipLineStringByPolygon(
         currentOutsidePath.push(startPt)
       } else {
         const lastPt = currentOutsidePath[currentOutsidePath.length - 1]
-        if (Math.hypot(startPt[0] - lastPt[0], startPt[1] - lastPt[1]) > 1e-12) {
+        if (Math.hypot(startPt[0] - lastPt[0], startPt[1] - lastPt[1]) > 1e-7) {
           currentOutsidePath.push(startPt)
         }
       }
@@ -182,32 +159,30 @@ export function clipLineStringByPolygon(
     // Sort intersections in ascending order of parameter t along p1 -> p2
     intersections.sort((a, b) => a.t - b.t)
 
-    // Deduplicate intersection points that are extremely close to start/end or previous t
-    const tValues: number[] = [0]
+    // Collect split points along segment p1 -> p2
     const pts: [number, number][] = [p1]
 
     for (const inter of intersections) {
-      const lastT = tValues[tValues.length - 1]
-      if (inter.t - lastT > 1e-8 && 1 - inter.t > 1e-8) {
-        tValues.push(inter.t)
+      const lastPt = pts[pts.length - 1]
+      if (Math.hypot(inter.point[0] - lastPt[0], inter.point[1] - lastPt[1]) > 1e-7) {
         pts.push(inter.point)
       }
     }
-    tValues.push(1)
-    pts.push(p2)
+    const lastPt = pts[pts.length - 1]
+    if (Math.hypot(p2[0] - lastPt[0], p2[1] - lastPt[1]) > 1e-7) {
+      pts.push(p2)
+    }
 
     // Process each sub-interval
-    for (let k = 0; k < tValues.length - 1; k++) {
-      const tMid = (tValues[k] + tValues[k + 1]) / 2
-      const midPt: [number, number] = [
-        p1[0] + tMid * (p2[0] - p1[0]),
-        p1[1] + tMid * (p2[1] - p1[1]),
-      ]
-
+    for (let k = 0; k < pts.length - 1; k++) {
       const startPt = pts[k]
       const endPt = pts[k + 1]
-      const inside = isPointInPolygon(midPt, poly)
+      const midPt: [number, number] = [
+        (startPt[0] + endPt[0]) / 2,
+        (startPt[1] + endPt[1]) / 2,
+      ]
 
+      const inside = isPointInPolygon(midPt, poly)
       addSegmentToPaths(startPt, endPt, inside)
     }
   }

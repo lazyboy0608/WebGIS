@@ -98,3 +98,16 @@ export type UndoSplitResponse = {
   restored_block: SeismicBlock
   deleted_child_ids: number[]
 }
+
+export type SegyTaskStatusResponse = {
+  task_id: string
+  filename: string
+  status: string
+  progress_percent: number
+  message: string
+  result?: any
+  error?: string
+  created_at?: string
+  updated_at?: string
+}
+

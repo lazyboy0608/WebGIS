@@ -311,6 +311,53 @@ export const DashboardPage: React.FC = () => {
     }
   }
 
+  const [deleteBlockTarget, setDeleteBlockTarget] = useState<{ name: string; rawSource: string; count: number } | null>(null)
+  const [showDeleteBlockModal, setShowDeleteBlockModal] = useState<boolean>(false)
+  const [deletingBlocks, setDeletingBlocks] = useState<boolean>(false)
+
+  // Group processed block files from blockGeoJSON
+  const processedBlockFiles = useMemo(() => {
+    if (!blockGeoJSON || blockGeoJSON.features.length === 0) return []
+
+    const fileMap = new Map<string, { name: string; count: number; rawSource: string }>()
+
+    for (const feat of blockGeoJSON.features) {
+      const src = (feat.properties?.source_file as string) || 'Vietnam_Seismic_Blocks.zip'
+      const rawBasename = src.split(/[/\\]/).pop() || 'Vietnam_Seismic_Blocks.zip'
+      const cleanName = rawBasename
+        .replace(/^[a-f0-9]{8}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{12}_/i, '')
+        .replace(/^[a-f0-9]{32}_/i, '')
+
+      const existing = fileMap.get(cleanName)
+      if (existing) {
+        existing.count++
+      } else {
+        fileMap.set(cleanName, {
+          name: cleanName,
+          count: 1,
+          rawSource: src,
+        })
+      }
+    }
+
+    return Array.from(fileMap.values())
+  }, [blockGeoJSON])
+
+  const handleConfirmDeleteBlockFile = async () => {
+    if (!deleteBlockTarget) return
+    setDeletingBlocks(true)
+    try {
+      await blocksApi.deleteBlocks(deleteBlockTarget.rawSource)
+      await fetchBlocks()
+      setShowDeleteBlockModal(false)
+      setDeleteBlockTarget(null)
+    } catch (err: any) {
+      setBlockError(err?.message || 'Lỗi khi xóa file Block')
+    } finally {
+      setDeletingBlocks(false)
+    }
+  }
+
   function handleSelectAll() {
     setSelectedFileIds(files.map((file) => file.id))
   }
@@ -672,6 +719,46 @@ export const DashboardPage: React.FC = () => {
                 <b>⤓</b>
               </button>
             </>
+          )}
+
+          {/* PROCESSED BLOCK FILE SECTION */}
+          <div className="surveys-header" style={{ marginTop: '12px' }}>
+            <label className="field-label">
+              Processed block file
+            </label>
+          </div>
+
+          {processedBlockFiles.length > 0 ? (
+            <div className="processed-block-list">
+              {processedBlockFiles.map((bFile) => (
+                <div key={bFile.name} className="processed-block-card">
+                  <div className="processed-block-info">
+                    <span className="block-file-icon">📦</span>
+                    <div className="block-file-text">
+                      <strong>{bFile.name}</strong>
+                      <small>{bFile.count} Lô địa chấn</small>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="delete-button delete-button--block"
+                    disabled={deletingBlocks}
+                    onClick={() => {
+                      setDeleteBlockTarget(bFile)
+                      setShowDeleteBlockModal(true)
+                    }}
+                    title={`Xóa file ${bFile.name}`}
+                  >
+                    <span>{deletingBlocks ? 'Đang xóa...' : 'Xóa block file'}</span>
+                    <b>✕</b>
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-block-hint">
+              <small>Chưa có file .zip block nào được xử lý.</small>
+            </div>
           )}
 
           <div className="rule" />
@@ -1263,6 +1350,39 @@ export const DashboardPage: React.FC = () => {
             <div className="modal-actions">
               <button type="button" className="btn-cancel" onClick={() => setExportModalResults(null)}>
                 Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRM DELETE BLOCK FILE */}
+      {showDeleteBlockModal && deleteBlockTarget && (
+        <div className="modal-backdrop" onClick={() => setShowDeleteBlockModal(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h3>Xóa Processed Block File</h3>
+            <p>
+              Bạn có chắc chắn muốn xóa dữ liệu Lô địa chấn từ file{' '}
+              <strong>{deleteBlockTarget.name}</strong> ({deleteBlockTarget.count} Lô)?
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-cancel"
+                onClick={() => {
+                  setShowDeleteBlockModal(false)
+                  setDeleteBlockTarget(null)
+                }}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                className="btn-delete-confirm"
+                disabled={deletingBlocks}
+                onClick={handleConfirmDeleteBlockFile}
+              >
+                {deletingBlocks ? 'Đang xóa...' : 'Xóa block file'}
               </button>
             </div>
           </div>

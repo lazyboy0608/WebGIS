@@ -101,5 +101,15 @@ export const blocksApi = {
     window.URL.revokeObjectURL(url)
     document.body.removeChild(a)
   },
+
+  /**
+   * Delete block files / blocks from database
+   */
+  deleteBlocks: async (sourceFile?: string): Promise<{ message: string; deleted_count: number }> => {
+    const query = sourceFile ? `?source_file=${encodeURIComponent(sourceFile)}` : ''
+    return apiClient<{ message: string; deleted_count: number }>(`/api/blocks${query}`, {
+      method: 'DELETE',
+    })
+  },
 }
 

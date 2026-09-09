@@ -192,3 +192,40 @@ def test_upload_rejects_filename_when_processed_file_already_exists(tmp_path) ->
         assert len(list(tmp_path.glob("*.sgy"))) == 0
     finally:
         app.dependency_overrides.clear()
+
+
+def test_upload_fast_async_returns_task_id_in_sub_second(tmp_path) -> None:
+    class RealStyleUseCase:
+        pass
+
+    service = FakeSegyFileService()
+    use_case = RealStyleUseCase()
+    query_service = FakeProcessedDataQueryService()
+    storage = LocalFileStorage(tmp_path)
+
+    app.dependency_overrides[get_segy_file_service] = lambda: service
+    app.dependency_overrides[get_process_segy_file_use_case] = lambda: use_case
+    app.dependency_overrides[get_processed_data_query_service] = lambda: query_service
+    app.dependency_overrides[get_file_storage] = lambda: storage
+
+    try:
+        with TestClient(app) as client:
+            with SEGY_FILE.open("rb") as file_handle:
+                response = client.post(
+                    "/api/segy-files/upload",
+                    files={
+                        "file": (
+                            "slb1_async.sgy",
+                            file_handle,
+                            "application/octet-stream",
+                        )
+                    },
+                )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert "task_id" in data
+        assert data["task_id"] is not None
+        assert data["filename"] == "slb1_async.sgy"
+    finally:
+        app.dependency_overrides.clear()

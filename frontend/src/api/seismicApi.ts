@@ -4,6 +4,7 @@ import type {
   FileListResponse,
   GeoJSONFeatureCollection,
   ProcessedDataSummary,
+  SegyTaskStatusResponse,
 } from '../types/api';
 
 export type ExportCsvResult = {
@@ -51,8 +52,17 @@ export async function fetchSegyTraces(fileId: number, signal?: AbortSignal): Pro
   });
 }
 
-export async function uploadSegyFiles(files: File[], sourceCrs?: string): Promise<number[]> {
-  if (files.length === 0) return [];
+export type SegyUploadResult = {
+  taskIds: string[];
+  fileIds: number[];
+};
+
+export async function fetchSegyTaskStatus(taskId: string): Promise<SegyTaskStatusResponse> {
+  return apiClient<SegyTaskStatusResponse>(`${API_PROCESSING_URL}/api/segy-files/tasks/${taskId}`);
+}
+
+export async function uploadSegyFiles(files: File[], sourceCrs?: string): Promise<SegyUploadResult> {
+  if (files.length === 0) return { taskIds: [], fileIds: [] };
 
   const formData = new FormData();
   files.forEach((file) => formData.append('files', file));
@@ -64,17 +74,22 @@ export async function uploadSegyFiles(files: File[], sourceCrs?: string): Promis
     formData.append('file', files[0]);
   }
 
-  const result = await apiClient<{ segy_file_id?: number; files?: { segy_file_id: number }[] }>(
-    `${API_PROCESSING_URL}${endpoint}`,
-    {
-      method: 'POST',
-      body: formData,
-    }
-  );
+  const result = await apiClient<{
+    segy_file_id?: number;
+    task_id?: string;
+    files?: { segy_file_id?: number; task_id?: string }[];
+  }>(`${API_PROCESSING_URL}${endpoint}`, {
+    method: 'POST',
+    body: formData,
+  });
 
-  return result.segy_file_id !== undefined
-    ? [result.segy_file_id]
-    : (result.files ?? []).map((file) => file.segy_file_id);
+  const rawList = result.files ?? (result.segy_file_id !== undefined || result.task_id !== undefined ? [result] : []);
+  const taskIds = rawList.map((item) => item.task_id).filter((id): id is string => Boolean(id));
+  const fileIds = rawList
+    .map((item) => item.segy_file_id)
+    .filter((id): id is number => typeof id === 'number' && id > 0);
+
+  return { taskIds, fileIds };
 }
 
 export async function deleteSegyFiles(targetFileIds: number[]): Promise<number[]> {
@@ -195,5 +210,35 @@ export function getSegyMvtTileUrlTemplate(fileIds?: number[]): string {
   const query = fileIds && fileIds.length > 0 ? `?file_ids=${fileIds.join(',')}` : ''
   return `${API_DATA_SERVING_URL}/api/segy-files/mvt/{z}/{x}/{y}.pbf${query}`
 }
+
+export type BatchSpatialFilterClipResponse = {
+  inside: GeoJSONFeatureCollection
+  outside: GeoJSONFeatureCollection
+}
+
+export async function clipSegyLinesBatch(
+  fileIds: number[],
+  polygonRings: [number, number][][]
+): Promise<BatchSpatialFilterClipResponse> {
+  if (fileIds.length === 0 || polygonRings.length === 0) {
+    return {
+      inside: { type: 'FeatureCollection', features: [] },
+      outside: { type: 'FeatureCollection', features: [] },
+    }
+  }
+
+  return apiClient<BatchSpatialFilterClipResponse>(
+    `${API_DATA_SERVING_URL}/api/segy-files/spatial-filter/clip`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file_ids: fileIds,
+        polygon_rings: polygonRings,
+      }),
+    }
+  )
+}
+
 
 

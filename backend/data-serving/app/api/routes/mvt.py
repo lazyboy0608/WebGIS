@@ -28,7 +28,7 @@ def get_all_vector_tile(
     parsed_file_ids = [int(f.strip()) for f in file_ids.split(",") if f.strip().isdigit()] if file_ids else None
     parsed_layers = [l.strip() for l in layers.split(",") if l.strip()] if layers else None
 
-    tile_bytes = mvt_service.generate_tile(
+    tile_bytes, is_hit = mvt_service.generate_tile(
         z=z,
         x=x,
         y=y,
@@ -40,6 +40,7 @@ def get_all_vector_tile(
         content=tile_bytes,
         media_type="application/x-protobuf",
         headers={
+            "X-Cache": "HIT" if is_hit else "MISS",
             "Cache-Control": "public, max-age=3600",
         },
     )
@@ -56,7 +57,7 @@ def get_file_vector_tile(
 ) -> Response:
     parsed_layers = [l.strip() for l in layers.split(",") if l.strip()] if layers else None
 
-    tile_bytes = mvt_service.generate_tile(
+    tile_bytes, is_hit = mvt_service.generate_tile(
         z=z,
         x=x,
         y=y,
@@ -68,6 +69,7 @@ def get_file_vector_tile(
         content=tile_bytes,
         media_type="application/x-protobuf",
         headers={
+            "X-Cache": "HIT" if is_hit else "MISS",
             "Cache-Control": "public, max-age=3600",
         },
     )

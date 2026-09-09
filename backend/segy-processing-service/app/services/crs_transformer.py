@@ -19,8 +19,11 @@ class CRSTransformer:
 
     def __init__(
         self,
-        source_crs: CoordinateReferenceSystem,
+        source_crs: CoordinateReferenceSystem | str,
     ) -> None:
+
+        if isinstance(source_crs, str):
+            source_crs = CoordinateReferenceSystem(name=source_crs)
 
         self.source_crs_definition = source_crs
 

@@ -1,5 +1,8 @@
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 from app.api.routes.block import router as block_router
 from app.api.routes.health import router as health_router

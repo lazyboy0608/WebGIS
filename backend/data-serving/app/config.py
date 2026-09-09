@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     minio_bucket_processed: str = "processed-segy"
     minio_presigned_expiry_seconds: int = 3600
 
+    # Redis Cache (db 0 for Data Serving)
+    redis_url: str = "redis://localhost:6379/0"
+    redis_cache_enabled: bool = True
+    redis_mvt_ttl_seconds: int = 86400       # 24 hours for MVT vector tiles
+    redis_blocks_ttl_seconds: int = 86400    # 24 hours for Seismic blocks GeoJSON
+    redis_segy_ttl_seconds: int = 86400      # 24 hours for SEG-Y survey metadata/lines
+
+
     model_config = SettingsConfigDict(
 
         env_file=".env",

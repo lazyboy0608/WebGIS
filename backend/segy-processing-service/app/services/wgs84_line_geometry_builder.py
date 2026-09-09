@@ -20,11 +20,13 @@ class WGS84LineGeometryBuilder:
     def build(
         self,
         line: Line,
-        source_crs: CoordinateReferenceSystem | None = None,
+        source_crs: CoordinateReferenceSystem | str | None = None,
     ) -> LineString:
 
         transformer = self.crs_transformer
         if source_crs is not None:
+            if isinstance(source_crs, str):
+                source_crs = CoordinateReferenceSystem(name=source_crs)
             transformer = CRSTransformer(source_crs)
 
         transformed_coordinates = [

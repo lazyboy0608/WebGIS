@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -8,16 +9,33 @@ from geoalchemy2.shape import to_shape
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.redis_client import redis_cache
 from app.services.geojson import feature_collection, geometry_to_geojson
+
+
+logger = logging.getLogger("webgis.processed_data")
 
 
 class ProcessedDataQueryService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self._cache: dict[str, tuple[float, Any]] = {}
-        self._cache_ttl_seconds = 60
+        self._cache_ttl_seconds = 1800
 
-    def _cached(self, key: str, loader: Any) -> Any:
+    def _cached(self, key: str, loader: Any, ttl: int | None = None) -> Any:
+        # Check Redis first if available
+        if redis_cache.is_available():
+            cached_val = redis_cache.get_json(key)
+            if cached_val is not None:
+                logger.info(f"[REDIS CACHE HIT] {key}")
+                return cached_val
+            logger.info(f"[REDIS CACHE MISS] {key} -> Querying PostGIS...")
+            value = loader()
+            if value is not None:
+                redis_cache.set_json(key, value, ttl=ttl or self._cache_ttl_seconds)
+            return value
+
+        # In-memory fallback
         now = time.monotonic()
         cached = self._cache.get(key)
         if cached is not None and now - cached[0] < self._cache_ttl_seconds:
@@ -210,56 +228,60 @@ class ProcessedDataQueryService:
         }
 
     def lines(self, file_id: int, line_id: int | None = None, bbox: str | None = None, offset: int = 0, limit: int = 1000) -> dict[str, Any]:
-        from app.models import SeismicLineModel, SeismicShotPointModel, SeismicTraceModel
+        def load() -> dict[str, Any]:
+            from app.models import SeismicLineModel, SeismicShotPointModel, SeismicTraceModel
 
-        query = select(
-            SeismicLineModel.id,
-            SeismicLineModel.line_id,
-            SeismicLineModel.point_count,
-            SeismicLineModel.geometry,
-            select(func.count(SeismicTraceModel.id))
-            .where(SeismicTraceModel.seismic_line_id == SeismicLineModel.id)
-            .scalar_subquery()
-            .label("trace_count"),
-            select(func.count(SeismicShotPointModel.id))
-            .where(SeismicShotPointModel.seismic_line_id == SeismicLineModel.id)
-            .scalar_subquery()
-            .label("shot_point_count"),
-        ).where(SeismicLineModel.segy_file_id == file_id)
-        if line_id is not None:
-            query = query.where(SeismicLineModel.id == line_id)
+            query = select(
+                SeismicLineModel.id,
+                SeismicLineModel.line_id,
+                SeismicLineModel.point_count,
+                SeismicLineModel.geometry,
+                select(func.count(SeismicTraceModel.id))
+                .where(SeismicTraceModel.seismic_line_id == SeismicLineModel.id)
+                .scalar_subquery()
+                .label("trace_count"),
+                select(func.count(SeismicShotPointModel.id))
+                .where(SeismicShotPointModel.seismic_line_id == SeismicLineModel.id)
+                .scalar_subquery()
+                .label("shot_point_count"),
+            ).where(SeismicLineModel.segy_file_id == file_id)
+            if line_id is not None:
+                query = query.where(SeismicLineModel.id == line_id)
 
-        polygon = self._bbox_polygon(bbox)
-        if polygon is not None:
-            query = query.where(SeismicLineModel.geometry.intersects(polygon))
+            polygon = self._bbox_polygon(bbox)
+            if polygon is not None:
+                query = query.where(SeismicLineModel.geometry.intersects(polygon))
 
-        rows = self.session.execute(
-            query.order_by(SeismicLineModel.id).offset(offset).limit(limit)
-        ).all()
+            rows = self.session.execute(
+                query.order_by(SeismicLineModel.id).offset(offset).limit(limit)
+            ).all()
 
-        features: list[dict[str, Any]] = []
-        for line_row_id, line_name, point_count, geom, trace_count, shot_point_count in rows:
-            shape = to_shape(geom)
-            features.append(
-                {
-                    "type": "Feature",
-                    "geometry": geometry_to_geojson(shape),
-                    "properties": {
-                        "id": line_row_id,
-                        "line_id": line_name,
-                        "point_count": point_count,
-                        "trace_count": trace_count,
-                        "shot_point_count": shot_point_count,
-                        "start_coordinate": list(shape.coords[0]),
-                        "end_coordinate": list(shape.coords[-1]),
-                        "segy_file_id": file_id,
-                        "srid": 4326,
-                        "source": "postgis",
-                    },
-                }
-            )
+            features: list[dict[str, Any]] = []
+            for line_row_id, line_name, point_count, geom, trace_count, shot_point_count in rows:
+                shape = to_shape(geom)
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": geometry_to_geojson(shape),
+                        "properties": {
+                            "id": line_row_id,
+                            "line_id": line_name,
+                            "point_count": point_count,
+                            "trace_count": trace_count,
+                            "shot_point_count": shot_point_count,
+                            "start_coordinate": list(shape.coords[0]),
+                            "end_coordinate": list(shape.coords[-1]),
+                            "segy_file_id": file_id,
+                            "srid": 4326,
+                            "source": "postgis",
+                        },
+                    }
+                )
 
-        return feature_collection(features)
+            return feature_collection(features)
+
+        cache_key = f"lines:{file_id}:{line_id}:{bbox}:{offset}:{limit}"
+        return self._cached(cache_key, load)
 
     def shot_points(
         self,
@@ -269,37 +291,41 @@ class ProcessedDataQueryService:
         offset: int = 0,
         limit: int = 1000,
     ) -> dict[str, Any]:
-        from app.models import SeismicShotPointModel
+        def load() -> dict[str, Any]:
+            from app.models import SeismicShotPointModel
 
-        query = select(SeismicShotPointModel.id, SeismicShotPointModel.geometry).where(SeismicShotPointModel.segy_file_id == file_id)
-        if shot_point_number is not None:
-            query = query.where(SeismicShotPointModel.shot_point_number == shot_point_number)
+            query = select(SeismicShotPointModel.id, SeismicShotPointModel.geometry).where(SeismicShotPointModel.segy_file_id == file_id)
+            if shot_point_number is not None:
+                query = query.where(SeismicShotPointModel.shot_point_number == shot_point_number)
 
-        polygon = self._bbox_polygon(bbox)
-        if polygon is not None:
-            query = query.where(SeismicShotPointModel.geometry.intersects(polygon))
+            polygon = self._bbox_polygon(bbox)
+            if polygon is not None:
+                query = query.where(SeismicShotPointModel.geometry.intersects(polygon))
 
-        rows = self.session.execute(
-            query.order_by(SeismicShotPointModel.id).offset(offset).limit(limit)
-        ).all()
+            rows = self.session.execute(
+                query.order_by(SeismicShotPointModel.id).offset(offset).limit(limit)
+            ).all()
 
-        features: list[dict[str, Any]] = []
-        for shot_id, geom in rows:
-            shape = to_shape(geom) if geom is not None else None
-            features.append(
-                {
-                    "type": "Feature",
-                    "geometry": geometry_to_geojson(shape),
-                    "properties": {
-                        "id": shot_id,
-                        "segy_file_id": file_id,
-                        "srid": 4326,
-                        "source": "postgis",
-                    },
-                }
-            )
+            features: list[dict[str, Any]] = []
+            for shot_id, geom in rows:
+                shape = to_shape(geom) if geom is not None else None
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": geometry_to_geojson(shape),
+                        "properties": {
+                            "id": shot_id,
+                            "segy_file_id": file_id,
+                            "srid": 4326,
+                            "source": "postgis",
+                        },
+                    }
+                )
 
-        return feature_collection(features)
+            return feature_collection(features)
+
+        cache_key = f"shot_points:{file_id}:{shot_point_number}:{bbox}:{offset}:{limit}"
+        return self._cached(cache_key, load)
 
     def traces(
         self,
@@ -309,37 +335,41 @@ class ProcessedDataQueryService:
         offset: int = 0,
         limit: int = 1000,
     ) -> dict[str, Any]:
-        from app.models import SeismicTraceModel
+        def load() -> dict[str, Any]:
+            from app.models import SeismicTraceModel
 
-        query = select(SeismicTraceModel.id, SeismicTraceModel.geometry).where(SeismicTraceModel.segy_file_id == file_id)
-        if line_id is not None:
-            query = query.where(SeismicTraceModel.seismic_line_id == line_id)
+            query = select(SeismicTraceModel.id, SeismicTraceModel.geometry).where(SeismicTraceModel.segy_file_id == file_id)
+            if line_id is not None:
+                query = query.where(SeismicTraceModel.seismic_line_id == line_id)
 
-        polygon = self._bbox_polygon(bbox)
-        if polygon is not None:
-            query = query.where(SeismicTraceModel.geometry.intersects(polygon))
+            polygon = self._bbox_polygon(bbox)
+            if polygon is not None:
+                query = query.where(SeismicTraceModel.geometry.intersects(polygon))
 
-        rows = self.session.execute(
-            query.order_by(SeismicTraceModel.id).offset(offset).limit(limit)
-        ).all()
+            rows = self.session.execute(
+                query.order_by(SeismicTraceModel.id).offset(offset).limit(limit)
+            ).all()
 
-        features: list[dict[str, Any]] = []
-        for trace_id, geom in rows:
-            shape = to_shape(geom)
-            features.append(
-                {
-                    "type": "Feature",
-                    "geometry": geometry_to_geojson(shape),
-                    "properties": {
-                        "id": trace_id,
-                        "segy_file_id": file_id,
-                        "srid": 4326,
-                        "source": "postgis",
-                    },
-                }
-            )
+            features: list[dict[str, Any]] = []
+            for trace_id, geom in rows:
+                shape = to_shape(geom)
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": geometry_to_geojson(shape),
+                        "properties": {
+                            "id": trace_id,
+                            "segy_file_id": file_id,
+                            "srid": 4326,
+                            "source": "postgis",
+                        },
+                    }
+                )
 
-        return feature_collection(features)
+            return feature_collection(features)
+
+        cache_key = f"traces:{file_id}:{line_id}:{bbox}:{offset}:{limit}"
+        return self._cached(cache_key, load)
 
     def clip_lines_by_polygon(
         self,
@@ -396,3 +426,77 @@ class ProcessedDataQueryService:
                 })
 
         return feature_collection(out_features)
+
+    def clip_lines_batch_postgis(
+        self,
+        file_ids: list[int],
+        polygon_rings: list[list[list[float]]],
+    ) -> dict[str, Any]:
+        import json
+        from app.models import SeismicLineModel
+
+        if not file_ids or not polygon_rings:
+            return {"inside": feature_collection([]), "outside": feature_collection([])}
+
+        poly_strings = []
+        for ring in polygon_rings:
+            if not ring or len(ring) < 3:
+                continue
+            closed_ring = list(ring)
+            if closed_ring[0] != closed_ring[-1]:
+                closed_ring.append(closed_ring[0])
+            coords_str = ", ".join(f"{pt[0]} {pt[1]}" for pt in closed_ring)
+            poly_strings.append(f"(({coords_str}))")
+
+        if not poly_strings:
+            return {"inside": feature_collection([]), "outside": feature_collection([])}
+
+        wkt = f"MULTIPOLYGON({', '.join(poly_strings)})"
+        poly_geom_4326 = func.ST_GeomFromText(wkt, 4326)
+        poly_geom_3857 = func.ST_Transform(poly_geom_4326, 3857)
+
+        line_3857 = func.ST_Transform(SeismicLineModel.geometry, 3857)
+
+        query = select(
+            SeismicLineModel.id,
+            SeismicLineModel.line_id,
+            SeismicLineModel.segy_file_id,
+            func.ST_Intersects(line_3857, poly_geom_3857).label("intersects"),
+            func.ST_AsGeoJSON(func.ST_Transform(func.ST_Intersection(line_3857, poly_geom_3857), 4326)).label("inside_json"),
+            func.ST_AsGeoJSON(func.ST_Transform(func.ST_Difference(line_3857, poly_geom_3857), 4326)).label("outside_json"),
+            func.ST_AsGeoJSON(SeismicLineModel.geometry).label("full_json"),
+        ).where(SeismicLineModel.segy_file_id.in_(file_ids))
+
+        rows = self.session.execute(query).all()
+
+        inside_features: list[dict[str, Any]] = []
+        outside_features: list[dict[str, Any]] = []
+
+        def _add_geom_features(geom_dict: dict[str, Any] | None, props: dict[str, Any], target_list: list[dict[str, Any]]) -> None:
+            if not geom_dict:
+                return
+            gtype = geom_dict.get("type")
+            if gtype in ("LineString", "MultiLineString"):
+                target_list.append({"type": "Feature", "geometry": geom_dict, "properties": props})
+            elif gtype == "GeometryCollection":
+                for sub_g in geom_dict.get("geometries", []):
+                    if sub_g.get("type") in ("LineString", "MultiLineString"):
+                        target_list.append({"type": "Feature", "geometry": sub_g, "properties": props})
+
+        for row_id, line_name, file_id, intersects, inside_json, outside_json, full_json in rows:
+            props = {"id": row_id, "line_id": line_name, "segy_file_id": file_id, "srid": 4326, "source": "postgis"}
+
+            if not intersects:
+                full_geom = json.loads(full_json) if full_json else None
+                _add_geom_features(full_geom, props, outside_features)
+            else:
+                if inside_json:
+                    _add_geom_features(json.loads(inside_json), props, inside_features)
+                if outside_json:
+                    _add_geom_features(json.loads(outside_json), props, outside_features)
+
+        return {
+            "inside": feature_collection(inside_features),
+            "outside": feature_collection(outside_features),
+        }
+

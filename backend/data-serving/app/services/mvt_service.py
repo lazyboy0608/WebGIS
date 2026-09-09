@@ -1,10 +1,15 @@
+import logging
 from typing import Sequence
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.redis_client import redis_cache
+
+logger = logging.getLogger("webgis.mvt")
+
 
 class MVTService:
-    """Service to generate Mapbox Vector Tiles (MVT) directly from PostGIS."""
+    """Service to generate Mapbox Vector Tiles (MVT) directly from PostGIS with Redis Cache-Aside."""
 
     def __init__(self, session: Session):
         self.session = session
@@ -17,10 +22,21 @@ class MVTService:
         file_ids: Sequence[int] | None = None,
         file_id: int | None = None,
         layers: Sequence[str] | None = None,
-    ) -> bytes:
+    ) -> tuple[bytes, bool]:
         target_layers = list(layers) if layers else ["lines", "shot_points", "traces"]
         active_file_ids = list(file_ids) if file_ids else ([file_id] if file_id is not None else None)
 
+        # ── 1. Check Redis Cache-Aside ─────────────────────────────────────────
+        file_ids_str = ",".join(map(str, sorted(active_file_ids))) if active_file_ids else "all"
+        layers_str = ",".join(sorted(target_layers))
+        cache_key = f"mvt:{file_ids_str}:{z}:{x}:{y}:{layers_str}"
+
+        cached_bytes = redis_cache.get_bytes(cache_key)
+        if cached_bytes is not None:
+            logger.info(f"[REDIS CACHE HIT] {cache_key} (Size: {len(cached_bytes)} bytes)")
+            return cached_bytes, True
+
+        logger.info(f"[REDIS CACHE MISS] {cache_key} -> Querying PostGIS...")
         file_filter = ""
         params: dict[str, object] = {"z": z, "x": x, "y": y}
         if active_file_ids:
@@ -110,4 +126,7 @@ class MVTService:
             if res and isinstance(res, bytes):
                 mvt_parts.append(res)
 
-        return b"".join(mvt_parts)
+        tile_bytes = b"".join(mvt_parts)
+        redis_cache.set_bytes(cache_key, tile_bytes)
+
+        return tile_bytes, False

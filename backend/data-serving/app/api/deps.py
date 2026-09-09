@@ -53,6 +53,29 @@ def get_current_user(
     return user
 
 
+def get_optional_current_user(
+    access_token: str | None = Cookie(default=None),
+    db: Session = Depends(get_db_session),
+) -> UserModel | None:
+    """
+    Optional dependency đọc access_token từ Cookie.
+    Trả về UserModel nếu hợp lệ, ngược lại trả về None mà không raise 401.
+    """
+    if not access_token:
+        return None
+    payload = decode_access_token(access_token)
+    if not payload or "sub" not in payload:
+        return None
+    try:
+        user_id_int = int(payload.get("sub"))
+    except (ValueError, TypeError):
+        return None
+    user = db.query(UserModel).filter(UserModel.id == user_id_int).first()
+    if not user or not user.is_active:
+        return None
+    return user
+
+
 def get_current_admin(current_user: UserModel = Depends(get_current_user)) -> UserModel:
     if current_user.role != "admin":
         raise HTTPException(
@@ -60,3 +83,4 @@ def get_current_admin(current_user: UserModel = Depends(get_current_user)) -> Us
             detail="Bạn không có quyền thực hiện thao tác này (Cần quyền Admin)",
         )
     return current_user
+

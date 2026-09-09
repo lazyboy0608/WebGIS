@@ -6,6 +6,7 @@ import {
   fetchSegyLines,
   fetchSegyShotPoints,
   fetchSegySummary,
+  fetchSegyTaskStatus,
   fetchSegyTraces,
   subscribeSegyProgressWebSocket,
   uploadSegyFiles as uploadSegyFilesApi,
@@ -27,6 +28,135 @@ function withUiFields(file: FileListItem): FileListItem {
     color: hasLines ? '#e4572e' : hasPoints ? '#1d7a8c' : '#8b949e',
     status: hasLines && hasPoints ? 'ready' : hasLines || hasPoints ? 'partial' : 'empty',
   };
+}
+
+type TaskState = {
+  taskId: string;
+  status: string;
+  progressPercent: number;
+  message: string;
+  segyFileId?: number;
+  error?: string;
+};
+
+async function waitForSegyTasks(
+  taskIds: string[],
+  clientId: string,
+  onProgress: (avgProgress: number, message: string) => void
+): Promise<number[]> {
+  const taskMap = new Map<string, TaskState>();
+  taskIds.forEach((id) => {
+    taskMap.set(id, {
+      taskId: id,
+      status: 'PENDING',
+      progressPercent: 20,
+      message: 'Đang xếp hàng xử lý...',
+    });
+  });
+
+  return new Promise<number[]>((resolve, reject) => {
+    let isFinished = false;
+
+    const cleanup = () => {
+      isFinished = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (wsUnsub) wsUnsub();
+    };
+
+    const checkCompletion = () => {
+      if (isFinished) return;
+
+      const tasks = Array.from(taskMap.values());
+      const totalProgress = tasks.reduce((sum, t) => sum + t.progressPercent, 0);
+      const avgProgress = Math.round(totalProgress / Math.max(tasks.length, 1));
+      const latestMsg = tasks.find((t) => t.status !== 'COMPLETED')?.message || 'Hoàn tất!';
+
+      onProgress(avgProgress, latestMsg);
+
+      const failedTask = tasks.find((t) => t.status === 'FAILED');
+      if (failedTask) {
+        cleanup();
+        reject(new Error(failedTask.error || `Xử lý file thất bại cho task ${failedTask.taskId}`));
+        return;
+      }
+
+      const allCompleted = tasks.every((t) => t.status === 'COMPLETED');
+      if (allCompleted) {
+        cleanup();
+        const fileIds = tasks
+          .map((t) => t.segyFileId)
+          .filter((id): id is number => typeof id === 'number' && id > 0);
+        resolve(fileIds);
+      }
+    };
+
+    const updateTaskState = (
+      taskId: string,
+      status: string,
+      progressPercent: number,
+      message: string,
+      result?: any,
+      error?: string
+    ) => {
+      const existing = taskMap.get(taskId);
+      if (!existing) return;
+
+      let fileId = existing.segyFileId;
+      if (result && typeof result.segy_file_id === 'number' && result.segy_file_id > 0) {
+        fileId = result.segy_file_id;
+      }
+
+      taskMap.set(taskId, {
+        taskId,
+        status: status || existing.status,
+        progressPercent: typeof progressPercent === 'number' ? progressPercent : existing.progressPercent,
+        message: message || existing.message,
+        segyFileId: fileId,
+        error: error || existing.error,
+      });
+
+      checkCompletion();
+    };
+
+    // 1. Subscribe to WebSocket updates
+    const wsUnsub = subscribeSegyProgressWebSocket(clientId, (msg) => {
+      if (msg.task_id && taskMap.has(msg.task_id)) {
+        updateTaskState(
+          msg.task_id,
+          msg.status,
+          msg.progress_percent,
+          msg.message,
+          msg.result,
+          msg.error
+        );
+      }
+    });
+
+    // 2. Fallback polling every 500ms
+    const pollTimer = setInterval(async () => {
+      if (isFinished) return;
+      for (const taskId of taskIds) {
+        const current = taskMap.get(taskId);
+        if (current && current.status !== 'COMPLETED' && current.status !== 'FAILED') {
+          try {
+            const taskData = await fetchSegyTaskStatus(taskId);
+            updateTaskState(
+              taskData.task_id,
+              taskData.status,
+              taskData.progress_percent,
+              taskData.message,
+              taskData.result,
+              taskData.error ?? undefined
+            );
+          } catch {
+            // ignore temporary polling errors
+          }
+        }
+      }
+    }, 500);
+
+    checkCompletion();
+  });
 }
 
 export function useSeismicData(fileIds: number[]) {
@@ -64,27 +194,37 @@ export function useSeismicData(fileIds: number[]) {
 
     setUploading(true);
     setError(null);
-    setProgressPercent(10);
+    setProgressPercent(15);
     setProgressMessage('Truyền dữ liệu file stream tới server...');
 
     const clientId = `client_${Date.now()}`;
-    const unsubscribe = subscribeSegyProgressWebSocket(clientId, (msg) => {
-      if (msg.message) setProgressMessage(msg.message);
-      if (typeof msg.progress_percent === 'number') setProgressPercent(msg.progress_percent);
-    });
 
     try {
-      const uploadedFileIds = await uploadSegyFilesApi(filesToUpload, sourceCrs);
+      const { taskIds, fileIds: initialFileIds } = await uploadSegyFilesApi(filesToUpload, sourceCrs);
+
+      let finalFileIds: number[] = [];
+      if (taskIds.length > 0) {
+        finalFileIds = await waitForSegyTasks(
+          taskIds,
+          clientId,
+          (percent, msg) => {
+            setProgressPercent(percent);
+            if (msg) setProgressMessage(msg);
+          }
+        );
+      } else {
+        finalFileIds = initialFileIds;
+      }
+
       setProgressPercent(100);
       setProgressMessage('Hoàn tất xử lý!');
       setFilesRefreshToken((token) => token + 1);
-      return uploadedFileIds;
+      return finalFileIds;
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : 'Không thể upload file SEG-Y';
       setError(message);
       throw reason;
     } finally {
-      unsubscribe();
       setTimeout(() => {
         setUploading(false);
         setProgressMessage(null);

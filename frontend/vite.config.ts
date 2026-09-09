@@ -22,6 +22,17 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/api/segy-files/ws': {
+        target: 'ws://localhost:8000',
+        ws: true,
+        changeOrigin: true,
+        secure: false,
+      },
+      '/api/segy-files/tasks': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+      },
       // 2. Proxy remaining API requests to Backend 2 (data-serving :8001)
       '/api': {
         target: 'http://localhost:8001',

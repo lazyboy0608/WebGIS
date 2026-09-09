@@ -573,62 +573,93 @@ export function SeismicMap({
     ]
     const hasPolygon = allActiveRings.length > 0
 
+    const allActiveRings3857: [number, number][][] = allActiveRings.map((ring) =>
+      ring.map((pt) => fromLonLat(pt) as [number, number])
+    )
+
     const insideSource = layerSet.insideLines.getSource()
     const outsideSource = layerSet.outsideLines.getSource()
     const linesSource = layerSet.lines.getSource()
 
-    insideSource?.clear()
-    outsideSource?.clear()
-    linesSource?.clear()
+    if (hasPolygon && showLines && data?.lines?.features && data.lines.features.length > 0) {
+      setTimeout(() => {
+        if (!layersRef.current) return
+        const inSrc = layersRef.current.insideLines.getSource()
+        const outSrc = layersRef.current.outsideLines.getSource()
+        inSrc?.clear()
+        outSrc?.clear()
 
-    if (hasPolygon && data?.lines && showLines) {
-      layerSet.lines.setVisible(false)
-      layerSet.insideLines.setVisible(true)
-      layerSet.outsideLines.setVisible(true)
+        const insideFeatures: Feature[] = []
+        const outsideFeatures: Feature[] = []
 
-      const polyRings3857 = allActiveRings.map((ring) =>
-        ring.map((c) => fromLonLat(c) as [number, number])
-      )
+        for (const feature of data.lines.features) {
+          const geom = feature.geometry
+          if (!geom) continue
 
-      for (const feature of data.lines.features) {
-        const lineStrings = extractLineStrings(feature.geometry)
-        for (const lineCoords of lineStrings) {
-          const lineCoords3857 = lineCoords.map((c) => fromLonLat(c) as [number, number])
+          const lineCoordLists: [number, number][][] =
+            geom.type === 'LineString'
+              ? [(geom.coordinates as [number, number][]).map((pt) => fromLonLat(pt) as [number, number])]
+              : geom.type === 'MultiLineString'
+              ? (geom.coordinates as [number, number][][]).map((list) =>
+                  list.map((pt) => fromLonLat(pt) as [number, number])
+                )
+              : []
 
-          let allInside: [number, number][][] = []
-          let remainingCoords: [number, number][][] = [lineCoords3857]
+          for (const coords of lineCoordLists) {
+            if (coords.length < 2) continue
 
-          for (const polyRing3857 of polyRings3857) {
-            const nextRemaining: [number, number][][] = []
-            for (const seg of remainingCoords) {
-              const { inside, outside } = clipLineStringByPolygon(seg, polyRing3857)
-              allInside = [...allInside, ...inside]
-              nextRemaining.push(...outside)
+            let outsidePaths: [number, number][][] = [coords]
+            let insidePaths: [number, number][][] = []
+
+            for (const ring3857 of allActiveRings3857) {
+              const nextOutsidePaths: [number, number][][] = []
+              for (const path of outsidePaths) {
+                const { inside, outside } = clipLineStringByPolygon(path, ring3857)
+                insidePaths.push(...inside)
+                nextOutsidePaths.push(...outside)
+              }
+              outsidePaths = nextOutsidePaths
             }
-            remainingCoords = nextRemaining
-          }
 
-          for (const subCoords of allInside) {
-            const geom = new LineString(subCoords)
-            const f = new Feature({ geometry: geom })
-            f.setProperties(feature.properties)
-            insideSource?.addFeature(f)
-          }
+            for (const inPath of insidePaths) {
+              if (inPath.length >= 2) {
+                const lineGeom = new LineString(inPath)
+                const f = new Feature({ geometry: lineGeom })
+                if (feature.properties) f.setProperties(feature.properties)
+                insideFeatures.push(f)
+              }
+            }
 
-          for (const subCoords of remainingCoords) {
-            const geom = new LineString(subCoords)
-            const f = new Feature({ geometry: geom })
-            f.setProperties(feature.properties)
-            outsideSource?.addFeature(f)
+            for (const outPath of outsidePaths) {
+              if (outPath.length >= 2) {
+                const lineGeom = new LineString(outPath)
+                const f = new Feature({ geometry: lineGeom })
+                if (feature.properties) f.setProperties(feature.properties)
+                outsideFeatures.push(f)
+              }
+            }
           }
         }
-      }
+
+        inSrc?.addFeatures(insideFeatures)
+        outSrc?.addFeatures(outsideFeatures)
+
+        layersRef.current.insideLines.setVisible(true)
+        layersRef.current.outsideLines.setVisible(true)
+        layersRef.current.lines.setVisible(false)
+        layersRef.current.mvt.setVisible(false)
+      }, 0)
     } else {
-      layerSet.lines.setVisible(showLines)
+      insideSource?.clear()
+      outsideSource?.clear()
+      linesSource?.clear()
+
       layerSet.insideLines.setVisible(false)
       layerSet.outsideLines.setVisible(false)
+      layerSet.lines.setVisible(!mvtFileIds?.length && showLines)
+      layerSet.mvt.setVisible(Boolean(mvtFileIds && mvtFileIds.length > 0))
 
-      if (data?.lines && showLines) {
+      if (data?.lines && showLines && !mvtFileIds?.length) {
         const features = format.readFeatures(data.lines, {
           dataProjection: 'EPSG:4326',
           featureProjection: 'EPSG:3857',
@@ -680,11 +711,11 @@ export function SeismicMap({
         const normalizedExtent = nextExtent as [number, number, number, number]
         extent = extent
           ? [
-              Math.min(extent[0], normalizedExtent[0]),
-              Math.min(extent[1], normalizedExtent[1]),
-              Math.max(extent[2], normalizedExtent[2]),
-              Math.max(extent[3], normalizedExtent[3]),
-            ]
+            Math.min(extent[0], normalizedExtent[0]),
+            Math.min(extent[1], normalizedExtent[1]),
+            Math.max(extent[2], normalizedExtent[2]),
+            Math.max(extent[3], normalizedExtent[3]),
+          ]
           : normalizedExtent
       }
     })

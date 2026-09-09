@@ -2,7 +2,7 @@ import os
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import geopandas as gpd
 from shapely import force_2d
@@ -11,6 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.redis_client import processing_redis
 from app.infrastructure.database.models import SeismicBlockModel
 from app.infrastructure.storage.minio_file_storage import MinioFileStorage
 
@@ -30,6 +31,7 @@ class BlockProcessingService:
         self,
         zip_bytes: bytes,
         filename: str,
+        user_id: Optional[int] = None,
     ) -> List[SeismicBlockModel]:
         """
         1. Save raw zip file to MinIO (bucket: blocks-raw-inputs).
@@ -148,6 +150,7 @@ class BlockProcessingService:
                 wkt_str = geom.wkt
 
                 block_model = SeismicBlockModel(
+                    user_id=user_id,
                     block_code=code_val,
                     operator=op_val,
                     basin_name=basin_val,
@@ -160,6 +163,7 @@ class BlockProcessingService:
                 imported_blocks.append(block_model)
 
             self.db.commit()
+            processing_redis.invalidate_data_cache_pattern("blocks:*")
             for b in imported_blocks:
                 self.db.refresh(b)
 

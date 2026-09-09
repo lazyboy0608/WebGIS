@@ -25,5 +25,10 @@ class Settings:
     )
     MINIO_BUCKET_BLOCKS_RAW: str = os.getenv("MINIO_BUCKET_BLOCKS_RAW", "blocks-raw-inputs")
 
+    # Redis Configurations (db 1 for processing tasks/pubsub, db 0 for data-serving cache invalidation)
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/1")
+    REDIS_DATA_SERVING_URL: str = os.getenv("REDIS_DATA_SERVING_URL", "redis://localhost:6379/0")
+    REDIS_ENABLED: bool = os.getenv("REDIS_ENABLED", "true").lower() in ("true", "1", "yes")
+    REDIS_TASK_TTL_SECONDS: int = int(os.getenv("REDIS_TASK_TTL_SECONDS", "3600"))
 
 settings = Settings()

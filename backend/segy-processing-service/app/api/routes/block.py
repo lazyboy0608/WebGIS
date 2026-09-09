@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_db_session
+from app.api.dependencies import get_current_user_id, get_db_session
 from app.api.schemas.block import BlockInfo, BlockUploadResponse
 from app.services.block_processing_service import BlockProcessingService
 
@@ -17,10 +17,10 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
     summary="Upload .zip Shapefile phân lô, nạp vào MinIO và PostGIS (EPSG:4326)",
 )
-
 async def upload_block_zip(
     file: UploadFile = File(...),
     db: Session = Depends(get_db_session),
+    current_user_id: int | None = Depends(get_current_user_id),
 ):
     if not file.filename.lower().endswith(".zip"):
         raise HTTPException(
@@ -31,7 +31,7 @@ async def upload_block_zip(
     try:
         contents = await file.read()
         service = BlockProcessingService(db)
-        imported_blocks = service.process_shapefile_zip(contents, file.filename)
+        imported_blocks = service.process_shapefile_zip(contents, file.filename, user_id=current_user_id)
 
         blocks_info = [
             BlockInfo(
