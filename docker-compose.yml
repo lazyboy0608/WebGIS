@@ -1,19 +1,31 @@
-version: '3.8'
-
 services:
   # ============================================================
-  # Redis Cache & Pub/Sub (Single-Server All-in-One Engine)
+  # 1. Nginx Single Web Gateway (Port 80 Mở ra Mạng LAN)
+  # ============================================================
+  gateway:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: webgis-gateway
+    restart: always
+    ports:
+      - "${WEB_PORT:-80}:80"
+    depends_on:
+      - segy-processing
+      - data-serving
+    networks:
+      - webgis-network
+
+  # ============================================================
+  # 2. Redis Cache & Pub/Sub Engine (Nội bộ Docker)
   # ============================================================
   redis:
     image: redis:7-alpine
     container_name: webgis-redis
     restart: always
-    ports:
-      - "6379:6379"
     volumes:
-      - ./tools/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis_data:/data
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "2gb", "--maxmemory-policy", "allkeys-lru"]
     deploy:
       resources:
         limits:
@@ -23,30 +35,32 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - webgis-network
 
   # ============================================================
-  # PostGIS Database
+  # 3. PostGIS Spatial Database (Nội bộ Docker)
   # ============================================================
   postgis:
     image: postgis/postgis:15-3.4-alpine
     container_name: webgis-postgis
     restart: always
     environment:
-      POSTGRES_DB: webgis
-      POSTGRES_USER: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-webgis}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-06082004}
-    ports:
-      - "5432:5432"
     volumes:
       - postgis_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d webgis"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-webgis}"]
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - webgis-network
 
   # ============================================================
-  # MinIO Object Storage
+  # 4. MinIO S3 Object Storage (Nội bộ Docker)
   # ============================================================
   minio:
     image: minio/minio:latest
@@ -56,9 +70,6 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    ports:
-      - "9000:9000"
-      - "9001:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -66,9 +77,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - webgis-network
 
   # ============================================================
-  # SEG-Y Processing Service (Port 8000)
+  # 5. SEG-Y Processing Service (Backend 1: Port 8000 Nội bộ)
   # ============================================================
   segy-processing:
     build:
@@ -77,7 +90,7 @@ services:
     container_name: webgis-segy-processing
     restart: always
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-06082004}@postgis:5432/webgis
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-06082004}@postgis:5432/${POSTGRES_DB:-webgis}
       REDIS_URL: redis://redis:6379/1
       REDIS_DATA_SERVING_URL: redis://redis:6379/0
       REDIS_ENABLED: "true"
@@ -86,8 +99,8 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_SECURE: "false"
       STORAGE_TYPE: minio
-    ports:
-      - "8000:8000"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-super-secret-key-change-in-production-2026}
+      JWT_ALGORITHM: HS256
     depends_on:
       redis:
         condition: service_healthy
@@ -95,9 +108,11 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    networks:
+      - webgis-network
 
   # ============================================================
-  # Data Serving Service (Port 8001)
+  # 6. Data Serving Service (Backend 2: Port 8001 Nội bộ)
   # ============================================================
   data-serving:
     build:
@@ -106,22 +121,34 @@ services:
     container_name: webgis-data-serving
     restart: always
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-06082004}@postgis:5432/webgis
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-06082004}@postgis:5432/${POSTGRES_DB:-webgis}
       REDIS_URL: redis://redis:6379/0
       REDIS_CACHE_ENABLED: "true"
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_SECURE: "false"
-    ports:
-      - "8001:8001"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-super-secret-key-change-in-production-2026}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 1440
     depends_on:
       redis:
         condition: service_healthy
       postgis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - webgis-network
+
+networks:
+  webgis-network:
+    driver: bridge
 
 volumes:
   redis_data:
+    name: webgis_redis_data
   postgis_data:
+    name: webgis_postgis_data
   minio_data:
+    name: webgis_minio_data

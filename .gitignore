@@ -13,29 +13,40 @@ __pycache__/
 .venv/
 venv/
 ENV/
+env/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+htmlcov/
+.coverage
+.coverage.*
 
 # Node / Frontend
 node_modules/
 dist/
 dist-ssr/
 *.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Environment & Secrets
+# Environment & Secrets (Không commit mật khẩu thật, cho phép commit file mẫu .example)
 .env
-.env.local
-*.env
+.env.*
+!.env.example
+!.env.production.example
 
-# MinIO & Local Binary Tools (minio.exe exceeds GitHub 100MB limit)
-tools/
+# Large Data & Storage
 storage/
-storage/segy/
-storage/minio_data/
-*.exe
-*.dll
+tools/minio/minio.exe
+*.segy
+*.sgy
+*.zip
+*.tar.gz
+*.sqlite3
+*.log
 
-# OS
+# OS Generated
 .DS_Store
 Thumbs.db
+Desktop.ini

@@ -1,0 +1,38 @@
+# Git & IDE
+.git
+.gitignore
+.vscode
+.idea
+
+# Python
+.venv
+venv
+ENV
+env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.ruff_cache
+.mypy_cache
+*.egg-info
+
+# Node / Frontend
+frontend/node_modules
+frontend/dist
+frontend/dist-ssr
+
+# Environment files
+.env*
+!.env.production.example
+!.env.example
+
+# Large binary & local storage
+storage
+tools
+*.segy
+*.sgy
+*.zip
+*.log
+*.tar.gz

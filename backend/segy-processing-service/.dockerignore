@@ -1,0 +1,33 @@
+# Python Virtual Environments
+.venv
+venv
+ENV
+env
+
+# Python Bytecode & Cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache
+.ruff_cache
+.mypy_cache
+htmlcov
+.coverage
+
+# Data & Local Storage
+storage
+data
+*.segy
+*.sgy
+*.zip
+*.log
+
+# Git & IDE
+.git
+.vscode
+.idea
+
+# Environment files
+.env*
+!.env.example
