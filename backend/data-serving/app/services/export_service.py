@@ -1,9 +1,11 @@
 import csv
 import io
 import os
+import re
 import time
 from pathlib import Path
 
+from pyproj import CRS, Transformer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from shapely import from_wkb
@@ -12,6 +14,60 @@ from shapely import from_wkb
 from app.config import settings
 from app.infrastructure.storage.minio_client import MinioClientManager, minio_manager
 from app.models import SegyFileModel, SeismicShotPointModel, SeismicTraceModel
+
+
+def normalize_crs_string(crs_input: str | None) -> str:
+    """Normalize user or header CRS inputs into standard EPSG or PROJ strings."""
+    if not crs_input:
+        return "EPSG:4326"
+    s = str(crs_input).strip()
+
+    # 1. Search for explicit EPSG:XXXX pattern
+    epsg_match = re.search(r"EPSG\s*[:=]\s*(\d+)", s, re.IGNORECASE)
+    if epsg_match:
+        return f"EPSG:{epsg_match.group(1)}"
+
+    # 2. Pure digits (e.g. "3405", "4326")
+    if s.isdigit():
+        return f"EPSG:{s}"
+
+    s_upper = s.upper()
+
+    # 3. VN-2000 keywords
+    if "VN-2000" in s_upper or "VN2000" in s_upper:
+        if "48" in s_upper or "105" in s_upper:
+            return "EPSG:3405"
+        elif "49" in s_upper or "111" in s_upper:
+            return "EPSG:3406"
+        elif "GEO" in s_upper or "KINH" in s_upper or "DEG" in s_upper:
+            return "EPSG:4756"
+        elif "5899" in s_upper or "NAT" in s_upper or "3 DEG" in s_upper:
+            return "EPSG:5899"
+        return "EPSG:3405"
+
+    # 4. Hanoi 1972 keywords
+    if "HANOI" in s_upper or "HN-72" in s_upper or "HN72" in s_upper:
+        if "49" in s_upper:
+            return "EPSG:2049"
+        return "EPSG:2048"
+
+    # 5. Pseudo Mercator / Web Mercator
+    if "3857" in s_upper or "MERCATOR" in s_upper:
+        return "EPSG:3857"
+
+    # 6. WGS84 / UTM keywords
+    if "UTM" in s_upper:
+        if "48" in s_upper:
+            return "EPSG:32648"
+        elif "49" in s_upper:
+            return "EPSG:32649"
+        elif "50" in s_upper:
+            return "EPSG:32650"
+
+    if "WGS" in s_upper or "GPS" in s_upper:
+        return "EPSG:4326"
+
+    return s
 
 
 class ExportService:
@@ -227,6 +283,7 @@ class ExportService:
         polygon_ring: list[list[float]],
         polygon_name: str = "spatial_filter",
         file_ids: list[int] | None = None,
+        target_crs: str | None = None,
     ) -> list[dict]:
         """
         Export line segments inside a polygon filter to individual SEG-Y (.sgy) files.
@@ -320,34 +377,65 @@ class ExportService:
                         spec.tracecount = len(inside_indices)
 
                         with segyio.create(temp_dst_path, spec) as dst:
-                            # Update textual header so CRS is recognized as EPSG:4326
+                            # 1. Resolve Target CRS from explicit parameter or segy_file metadata
+                            raw_crs_code = target_crs or segy_file.source_crs or "EPSG:4326"
+                            target_crs_code = normalize_crs_string(raw_crs_code)
+                            try:
+                                crs_obj = CRS.from_user_input(target_crs_code)
+                                crs_epsg = f"EPSG:{crs_obj.to_epsg()}" if crs_obj.to_epsg() else target_crs_code
+                                crs_name = crs_obj.name
+                                is_projected = crs_obj.is_projected
+                            except Exception:
+                                crs_epsg = target_crs_code
+                                crs_name = target_crs_code
+                                is_projected = any(k in target_crs_code.upper() for k in ["UTM", "3405", "3406", "3264", "3265", "2048", "2049", "5899", "3857"])
+
+                            # 2. Update textual header with the configured Projection (40 lines x 80 columns)
                             raw_text = src.text[0]
                             if isinstance(raw_text, (bytes, bytearray)):
                                 text_str = bytes(raw_text).decode("ascii", errors="replace")
                             else:
                                 text_str = str(raw_text)
 
-                            if re.search(r"\bEPSG\s*[:=]\s*\d+\b", text_str, flags=re.IGNORECASE):
-                                new_text_str = re.sub(
-                                    r"\bEPSG\s*[:=]\s*\d+\b",
-                                    "EPSG:4326",
-                                    text_str,
-                                    flags=re.IGNORECASE,
-                                )
-                            else:
-                                line8_rep = "C08 Projection: [EPSG:4326] WGS 84 (Geographic)".ljust(80)
-                                if len(text_str) >= 640:
-                                    new_text_str = text_str[:560] + line8_rep + text_str[640:]
-                                else:
-                                    new_text_str = text_str + "\n" + line8_rep
+                            if len(text_str) < 3200:
+                                text_str = text_str.ljust(3200)
 
-                            dst.text[0] = new_text_str.ljust(len(text_str))
+                            lines_80 = [text_str[i:i+80] for i in range(0, 3200, 80)]
+                            if len(lines_80) < 40:
+                                lines_80.extend(["".ljust(80) for _ in range(40 - len(lines_80))])
+
+                            # Line C08 (index 7): overwrite with the exact CRS Projection definition
+                            lines_80[7] = f"C08 Projection: [{crs_epsg}] {crs_name}"[:80].ljust(80)
+
+                            # Clean any other lines having old EPSG codes if present
+                            for l_idx in range(len(lines_80)):
+                                if l_idx == 7:
+                                    continue
+                                if re.search(r"\bEPSG\s*[:=]\s*\d+\b", lines_80[l_idx], flags=re.IGNORECASE):
+                                    lines_80[l_idx] = re.sub(
+                                        r"\bEPSG\s*[:=]\s*\d+\b",
+                                        crs_epsg,
+                                        lines_80[l_idx],
+                                        flags=re.IGNORECASE,
+                                    )[:80].ljust(80)
+
+                            new_text_str = "".join(lines_80[:40])
+                            dst.text[0] = new_text_str
+
                             for k, v in src.bin.items():
                                 try:
                                     dst.bin[k] = v
                                 except Exception:
                                     pass
                             dst.bin[segyio.BinField.Traces] = len(inside_indices)
+
+                            # 3. Setup Coordinate Transformer if projected system
+                            transformer = None
+                            if is_projected and crs_epsg.upper() != "EPSG:4326":
+                                try:
+                                    transformer = Transformer.from_crs("EPSG:4326", crs_epsg, always_xy=True)
+                                except Exception:
+                                    transformer = None
 
                             for new_idx, orig_idx in enumerate(inside_indices):
                                 # Copy all original headers and trace data
@@ -356,31 +444,43 @@ class ExportService:
                                 dst.header[new_idx][segyio.TraceField.TRACE_SEQUENCE_FILE] = new_idx + 1
                                 dst.trace[new_idx] = src.trace[orig_idx]
 
-                                # --- Overwrite coordinate headers with EPSG:4326 values ---
-                                # Use coordinates from PostGIS (already geographic, no reprojection needed).
-                                # Store as integer milliarcseconds: scalar = -1000 → divide by 1000 to get degrees.
+                                # --- Overwrite coordinate headers with target CRS values ---
                                 if orig_idx in trace_lonlat:
                                     lon, lat = trace_lonlat[orig_idx]
-                                    lon_scaled = int(round(lon * 30000))
-                                    lat_scaled = int(round(lat * 30000))
 
-                                    dst.header[new_idx].update({
-                                        # Byte 71-72: coordinate scalar (SourceGroupScalar) -> -30000 (~3.7m precision, fits in int16)
-                                        segyio.TraceField.SourceGroupScalar: -30000,
-                                        # Byte 69-70: elevation scalar (keep consistent)
-                                        segyio.TraceField.ElevationScalar: -30000,
-                                        # Byte 89-90: coordinate units (2 = Arcseconds / Geographic degrees)
-                                        segyio.TraceField.CoordinateUnits: 2,
-                                        # SRCX / SRCY (bytes 73-76 / 77-80)
-                                        segyio.TraceField.SourceX: lon_scaled,
-                                        segyio.TraceField.SourceY: lat_scaled,
-                                        # GroupX / GroupY (bytes 81-84 / 85-88)
-                                        segyio.TraceField.GroupX: lon_scaled,
-                                        segyio.TraceField.GroupY: lat_scaled,
-                                        # CDP-X / CDP-Y (bytes 181-184 / 185-188)
-                                        segyio.TraceField.CDP_X: lon_scaled,
-                                        segyio.TraceField.CDP_Y: lat_scaled,
-                                    })
+                                    if transformer is not None:
+                                        # Projected Coordinates (meters)
+                                        x_proj, y_proj = transformer.transform(lon, lat)
+                                        x_int = int(round(x_proj))
+                                        y_int = int(round(y_proj))
+
+                                        dst.header[new_idx].update({
+                                            segyio.TraceField.SourceGroupScalar: 1,
+                                            segyio.TraceField.ElevationScalar: 1,
+                                            segyio.TraceField.CoordinateUnits: 1,  # 1 = Length (meters)
+                                            segyio.TraceField.SourceX: x_int,
+                                            segyio.TraceField.SourceY: y_int,
+                                            segyio.TraceField.GroupX: x_int,
+                                            segyio.TraceField.GroupY: y_int,
+                                            segyio.TraceField.CDP_X: x_int,
+                                            segyio.TraceField.CDP_Y: y_int,
+                                        })
+                                    else:
+                                        # Geographic Coordinates (Degrees / Arcseconds)
+                                        lon_scaled = int(round(lon * 30000))
+                                        lat_scaled = int(round(lat * 30000))
+
+                                        dst.header[new_idx].update({
+                                            segyio.TraceField.SourceGroupScalar: -30000,
+                                            segyio.TraceField.ElevationScalar: -30000,
+                                            segyio.TraceField.CoordinateUnits: 2,  # 2 = Arcseconds / Geographic degrees
+                                            segyio.TraceField.SourceX: lon_scaled,
+                                            segyio.TraceField.SourceY: lat_scaled,
+                                            segyio.TraceField.GroupX: lon_scaled,
+                                            segyio.TraceField.GroupY: lat_scaled,
+                                            segyio.TraceField.CDP_X: lon_scaled,
+                                            segyio.TraceField.CDP_Y: lat_scaled,
+                                        })
 
                     with open(temp_dst_path, "rb") as f:
                         sgy_bytes = f.read()

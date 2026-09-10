@@ -6,7 +6,17 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // 1. Proxy upload and delete actions to Backend 1 (segy-processing-service :8000)
+      // 1. Proxy upload, inspection, and delete actions to Backend 1 (segy-processing-service :8000)
+      '/api/segy-files/inspect-header': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/api/segy-files/crs-presets': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+      },
       '/api/segy-files/upload': {
         target: 'http://localhost:8000',
         changeOrigin: true,

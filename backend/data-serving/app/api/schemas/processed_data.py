@@ -75,6 +75,7 @@ class ExportSegyPolygonRequest(BaseModel):
     polygon_ring: list[list[float]] = Field(..., description="Array of [lon, lat] points forming closed ring")
     polygon_name: str = Field(default="spatial_filter", description="Name of the polygon filter")
     file_ids: list[int] | None = Field(default=None, description="Optional filter by file IDs")
+    target_crs: str | None = Field(default=None, description="Optional target CRS to export (e.g. EPSG:3405)")
 
 
 class ExportSegyResult(BaseModel):

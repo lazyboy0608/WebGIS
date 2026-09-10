@@ -45,20 +45,23 @@ from app.application.services.segy_processing import (
 )
 from app.domain.models.crs import SOURCE_CRS
 from app.services.coordinate_transformer import CoordinateTransformer
-from app.services.crs_transformer import CRSTransformer
+from app.services.crs_transformer import CRSTransformer, normalize_crs_string
 from app.services.line_builder import LineBuilder
 from app.services.line_topology_analyzer import LineTopologyAnalyzer
 from app.services.segy_validator import SegyValidator
 from app.services.shot_point_analyzer import ShotPointAnalyzer
 from app.services.trace_processor import TraceProcessor
 from app.services.wgs84_line_geometry_builder import WGS84LineGeometryBuilder
+from pyproj import CRS
 from app.api.schemas.segy_file import (
+    CrsPresetResponse,
     ProcessedPointResponse,
     SegyBatchDeleteRequest,
     SegyBatchDeleteResponse,
     SegyFileCreate,
     SegyFileResponse,
     SegyFileUpdate,
+    SegyHeaderInspectionResponse,
     SegyProcessingResponse,
     SegyTaskStatusResponse,
     SegyUploadBatchResponse,
@@ -86,6 +89,70 @@ router = APIRouter(
     prefix="/api/segy-files",
     tags=["SEG-Y Files"],
 )
+
+
+CRS_PRESETS = [
+    {
+        "code": "EPSG:4326",
+        "name": "WGS 84 (Geographic / Kinh độ, Vĩ độ)",
+        "description": "Chuẩn tọa độ quốc tế GPS (Độ thập phân - Lat/Lon)",
+        "category": "Toàn cầu (WGS84)",
+    },
+    {
+        "code": "EPSG:3857",
+        "name": "WGS 84 / Pseudo-Mercator (Web Mercator)",
+        "description": "Chuẩn chiếu bản đồ trực tuyến (Google Maps, OSM, Met)",
+        "category": "Toàn cầu (WGS84)",
+    },
+    {
+        "code": "EPSG:32648",
+        "name": "WGS 84 / UTM zone 48N",
+        "description": "Tây Việt Nam, Lào, Campuchia, Vịnh Thái Lan",
+        "category": "UTM (Universal Transverse Mercator)",
+    },
+    {
+        "code": "EPSG:32649",
+        "name": "WGS 84 / UTM zone 49N",
+        "description": "Đông Việt Nam, Biển Đông, Quần đảo Hoàng Sa & Trường Sa",
+        "category": "UTM (Universal Transverse Mercator)",
+    },
+    {
+        "code": "EPSG:32650",
+        "name": "WGS 84 / UTM zone 50N",
+        "description": "Khu vực Đông Biển Đông / Philippines",
+        "category": "UTM (Universal Transverse Mercator)",
+    },
+    {
+        "code": "EPSG:3405",
+        "name": "VN-2000 / UTM zone 48N",
+        "description": "Hệ quy chiếu Quốc gia Việt Nam - Múi 48N (KTT 105°)",
+        "category": "Việt Nam (VN-2000)",
+    },
+    {
+        "code": "EPSG:3406",
+        "name": "VN-2000 / UTM zone 49N",
+        "description": "Hệ quy chiếu Quốc gia Việt Nam - Múi 49N (KTT 111°)",
+        "category": "Việt Nam (VN-2000)",
+    },
+    {
+        "code": "EPSG:4756",
+        "name": "VN-2000 (Geographic)",
+        "description": "Hệ quy chiếu VN-2000 dạng độ thập phân (Lat/Lon)",
+        "category": "Việt Nam (VN-2000)",
+    },
+    {
+        "code": "EPSG:2048",
+        "name": "Hanoi 1972 / UTM zone 48N",
+        "description": "Hệ tọa độ Hà Nội 1972 - Múi 48N",
+        "category": "Lịch sử (Hanoi 1972)",
+    },
+    {
+        "code": "EPSG:2049",
+        "name": "Hanoi 1972 / UTM zone 49N",
+        "description": "Hệ tọa độ Hà Nội 1972 - Múi 49N",
+        "category": "Lịch sử (Hanoi 1972)",
+    },
+]
 
 
 def _processing_response(
@@ -132,6 +199,7 @@ def process_stored_file_in_background(
     stored_path: Path,
     file_size: int,
     source_crs: str | None = None,
+    target_crs: str | None = None,
     user_id: int | None = None,
 ) -> None:
     """
@@ -176,6 +244,8 @@ def process_stored_file_in_background(
                     metadata, file_path=resolved_local_path
                 )
 
+            effective_crs = normalize_crs_string(target_crs) if target_crs else resolved_source_crs
+
             segy_file = service.create_file(
                 SegyFile(
                     id=None,
@@ -183,7 +253,7 @@ def process_stored_file_in_background(
                     filename=filename,
                     file_path=str(path_obj),
                     file_size=file_size if file_size > 0 else 1,
-                    source_crs=resolved_source_crs,
+                    source_crs=effective_crs,
                     trace_count=metadata.trace_count,
                     line_count=1,
                     geometry=None,
@@ -211,7 +281,7 @@ def process_stored_file_in_background(
 
             coord_transformer = CoordinateTransformer()
             crs_input = resolved_source_crs or SOURCE_CRS
-            wgs84_builder = WGS84LineGeometryBuilder(CRSTransformer(crs_input))
+            wgs84_builder = WGS84LineGeometryBuilder(CRSTransformer(crs_input, "EPSG:4326"))
 
             processing_service = SegyProcessingService(
                 segy_reader=reader,
@@ -232,6 +302,7 @@ def process_stored_file_in_background(
                 filename=path_obj.name,
                 segy_file_id=segy_file.id,
                 source_crs=resolved_source_crs,
+                target_crs=target_crs,
             )
             db_session.commit()
 
@@ -258,6 +329,90 @@ def process_stored_file_in_background(
                 pass
 
 
+@router.get(
+    "/crs-presets",
+    response_model=list[CrsPresetResponse],
+    summary="Get popular CRS presets",
+)
+def get_crs_presets() -> list[CrsPresetResponse]:
+    """Return available popular CRS presets with metadata."""
+    return [CrsPresetResponse(**p) for p in CRS_PRESETS]
+
+
+@router.post(
+    "/inspect-header",
+    response_model=SegyHeaderInspectionResponse,
+    summary="Pre-inspect SEG-Y file headers to extract Source CRS",
+)
+async def inspect_segy_header(
+    file: UploadFile = File(...),
+    file_storage: FileStorage = Depends(get_file_storage),
+) -> SegyHeaderInspectionResponse:
+    """
+    Fast pre-inspection of SEG-Y file headers to detect Source CRS and metadata
+    before proceeding with full upload and processing.
+    """
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An SEG-Y filename is required",
+        )
+
+    filename = Path(file.filename).name
+    temp_stored_path = None
+    try:
+        temp_filename = f"temp_inspect_{uuid4().hex}_{filename}"
+        file_size = getattr(file, "size", 0) or 0
+        try:
+            temp_stored_path = file_storage.save_stream(temp_filename, file.file, length=file_size)
+        except Exception:
+            file.file.seek(0)
+            file_bytes = await file.read()
+            temp_stored_path = file_storage.save(temp_filename, file_bytes)
+
+        resolved_local_path = file_storage.get_path(str(temp_stored_path))
+
+        reader = SegyReaderService(
+            reader=SegyIOReader(),
+            validator=SegyValidator(),
+        )
+        metadata = reader.read_metadata(resolved_local_path)
+        source_crs = extract_source_crs(metadata, file_path=resolved_local_path)
+
+        source_crs_name = source_crs
+        try:
+            crs_obj = CRS.from_user_input(source_crs)
+            source_crs_name = f"{crs_obj.name} ({source_crs})"
+        except Exception:
+            pass
+
+        preview = None
+        if metadata.textual_header and metadata.textual_header.raw_text:
+            lines = [l.strip() for l in metadata.textual_header.raw_text.splitlines() if l.strip()]
+            preview = "\n".join(lines[:8])
+
+        return SegyHeaderInspectionResponse(
+            filename=filename,
+            source_crs=source_crs,
+            source_crs_name=source_crs_name,
+            default_target_crs="EPSG:4326",
+            default_target_crs_name="WGS 84 (Kinh độ / Vĩ độ - EPSG:4326)",
+            trace_count=metadata.trace_count,
+            textual_header_preview=preview,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Không thể đọc header file SEG-Y: {str(exc)}",
+        ) from exc
+    finally:
+        if temp_stored_path is not None:
+            try:
+                file_storage.delete(temp_stored_path)
+            except Exception:
+                pass
+
+
 async def _upload_and_process(
     file: UploadFile,
     source_crs: str | None,
@@ -269,6 +424,7 @@ async def _upload_and_process(
     user_id: int | None = None,
     stored_paths: list[Path] | None = None,
     task_id: str | None = None,
+    target_crs: str | None = None,
 ) -> SegyProcessingResponse:
     if not file.filename:
         raise HTTPException(
@@ -352,6 +508,8 @@ async def _upload_and_process(
                 detail=str(exc),
             ) from exc
 
+        effective_crs = normalize_crs_string(target_crs) if target_crs else resolved_source_crs
+
         segy_file = service.create_file(
             SegyFile(
                 id=None,
@@ -359,7 +517,7 @@ async def _upload_and_process(
                 filename=filename,
                 file_path=str(stored_path),
                 file_size=file_size if file_size > 0 else 1,
-                source_crs=resolved_source_crs,
+                source_crs=effective_crs,
                 trace_count=metadata.trace_count,
                 line_count=1,
                 geometry=None,
@@ -379,6 +537,7 @@ async def _upload_and_process(
             filename=stored_path.name,
             segy_file_id=segy_file.id,
             source_crs=resolved_source_crs,
+            target_crs=target_crs,
         )
         if session is not None:
             session.commit()
@@ -412,6 +571,7 @@ async def _upload_async_fast(
     service: SegyFileService,
     query_service: ProcessedDataQueryService,
     file_storage: FileStorage,
+    target_crs: str | None = None,
     user_id: int | None = None,
 ) -> SegyProcessingResponse:
     if not file.filename:
@@ -466,6 +626,7 @@ async def _upload_async_fast(
         stored_path,
         file_size,
         source_crs,
+        target_crs,
         user_id,
     )
 
@@ -491,6 +652,7 @@ async def upload_and_process_segy_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     source_crs: str | None = Form(None),
+    target_crs: str | None = Form(None),
     current_user_id: int | None = Depends(get_current_user_id),
     service: SegyFileService = Depends(get_segy_file_service),
     query_service: ProcessedDataQueryService = Depends(
@@ -513,6 +675,7 @@ async def upload_and_process_segy_file(
             file_storage,
             session=session,
             user_id=current_user_id,
+            target_crs=target_crs,
         )
     return await _upload_async_fast(
         file,
@@ -521,6 +684,7 @@ async def upload_and_process_segy_file(
         service,
         query_service,
         file_storage,
+        target_crs=target_crs,
         user_id=current_user_id,
     )
 
@@ -534,6 +698,7 @@ async def upload_and_process_segy_files(
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     source_crs: str | None = Form(None),
+    target_crs: str | None = Form(None),
     current_user_id: int | None = Depends(get_current_user_id),
     service: SegyFileService = Depends(get_segy_file_service),
     query_service: ProcessedDataQueryService = Depends(
@@ -570,6 +735,7 @@ async def upload_and_process_segy_files(
                         session=session,
                         user_id=current_user_id,
                         stored_paths=stored_paths,
+                        target_crs=target_crs,
                     )
                 )
             else:
@@ -581,6 +747,7 @@ async def upload_and_process_segy_files(
                         service,
                         query_service,
                         file_storage,
+                        target_crs=target_crs,
                         user_id=current_user_id,
                     )
                 )

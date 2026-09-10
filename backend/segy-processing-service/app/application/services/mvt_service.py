@@ -47,14 +47,20 @@ class MVTService:
                         true
                     ) AS geom
                 FROM seismic_lines l, tile_env t
-                WHERE l.geometry IS NOT NULL AND ST_Transform(l.geometry, 3857) && t.bbox
+                WHERE l.geometry IS NOT NULL
+                  AND ST_XMin(l.geometry) >= -180 AND ST_XMax(l.geometry) <= 180
+                  AND ST_YMin(l.geometry) >= -90 AND ST_YMax(l.geometry) <= 90
+                  AND ST_Transform(l.geometry, 3857) && t.bbox
                 {file_filter}
             )
             SELECT ST_AsMVT(mvtgeom, 'lines', 4096, 'geom') FROM mvtgeom;
             """
-            res = self.session.execute(text(sql_lines), params).scalar()
-            if res and isinstance(res, bytes):
-                mvt_parts.append(res)
+            try:
+                res = self.session.execute(text(sql_lines), params).scalar()
+                if res and isinstance(res, bytes):
+                    mvt_parts.append(res)
+            except Exception:
+                pass
 
         if "shot_points" in target_layers:
             sql_sp = f"""
@@ -74,14 +80,20 @@ class MVTService:
                         true
                     ) AS geom
                 FROM seismic_shot_points sp, tile_env t
-                WHERE sp.geometry IS NOT NULL AND ST_Transform(sp.geometry, 3857) && t.bbox
+                WHERE sp.geometry IS NOT NULL
+                  AND ST_XMin(sp.geometry) >= -180 AND ST_XMax(sp.geometry) <= 180
+                  AND ST_YMin(sp.geometry) >= -90 AND ST_YMax(sp.geometry) <= 90
+                  AND ST_Transform(sp.geometry, 3857) && t.bbox
                 {file_filter}
             )
             SELECT ST_AsMVT(mvtgeom, 'shot_points', 4096, 'geom') FROM mvtgeom;
             """
-            res = self.session.execute(text(sql_sp), params).scalar()
-            if res and isinstance(res, bytes):
-                mvt_parts.append(res)
+            try:
+                res = self.session.execute(text(sql_sp), params).scalar()
+                if res and isinstance(res, bytes):
+                    mvt_parts.append(res)
+            except Exception:
+                pass
 
         if "traces" in target_layers:
             sql_traces = f"""
@@ -101,13 +113,19 @@ class MVTService:
                         true
                     ) AS geom
                 FROM seismic_traces tr, tile_env t
-                WHERE tr.geometry IS NOT NULL AND ST_Transform(tr.geometry, 3857) && t.bbox
+                WHERE tr.geometry IS NOT NULL
+                  AND ST_XMin(tr.geometry) >= -180 AND ST_XMax(tr.geometry) <= 180
+                  AND ST_YMin(tr.geometry) >= -90 AND ST_YMax(tr.geometry) <= 90
+                  AND ST_Transform(tr.geometry, 3857) && t.bbox
                 {file_filter}
             )
             SELECT ST_AsMVT(mvtgeom, 'traces', 4096, 'geom') FROM mvtgeom;
             """
-            res = self.session.execute(text(sql_traces), params).scalar()
-            if res and isinstance(res, bytes):
-                mvt_parts.append(res)
+            try:
+                res = self.session.execute(text(sql_traces), params).scalar()
+                if res and isinstance(res, bytes):
+                    mvt_parts.append(res)
+            except Exception:
+                pass
 
         return b"".join(mvt_parts)

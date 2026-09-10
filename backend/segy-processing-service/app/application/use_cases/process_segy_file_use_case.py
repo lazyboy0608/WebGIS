@@ -32,6 +32,7 @@ class ProcessSegyFileUseCase:
         filename: str,
         segy_file_id: int,
         source_crs: str | None = None,
+        target_crs: str | None = None,
     ) -> ProcessedSegyData:
         """
         Process a SEG-Y file and persist its processing result.
@@ -48,13 +49,11 @@ class ProcessSegyFileUseCase:
         propagated to the caller.
         """
 
-        if source_crs is None:
-            processed_data = self._processing_service.process_file(filename)
-        else:
-            processed_data = self._processing_service.process_file(
-                filename,
-                source_crs=source_crs,
-            )
+        processed_data = self._processing_service.process_file(
+            filename,
+            source_crs=source_crs,
+            target_crs=target_crs,
+        )
 
         self._persistence_service.persist(
             processed_data,

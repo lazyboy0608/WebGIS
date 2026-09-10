@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../../App.css'
 import { SeismicMap, type BlockClickInfo } from '../../components/SeismicMap'
+import { CrsConfigModal } from '../../components/CrsConfigModal'
 import { useSeismicData } from '../../hooks/useSeismicData'
 import { useAuth } from '../auth/AuthContext'
 import {
@@ -14,7 +15,7 @@ import {
   type ExportSegyResult,
 } from '../../api/seismicApi'
 import { blocksApi } from '../../api/blocksApi'
-import type { GeoJSONFeatureCollection, SplitCommand } from '../../types/api'
+import type { GeoJSONFeatureCollection, SegyHeaderInspectionResult, SplitCommand } from '../../types/api'
 
 export const DashboardPage: React.FC = () => {
   const { user, logout } = useAuth()
@@ -275,22 +276,62 @@ export const DashboardPage: React.FC = () => {
     exporting,
     exportError,
     error,
+    inspectHeader,
     uploadFiles,
     deleteFiles,
     exportCsv,
   } = useSeismicData(selectedFileIds)
   const selectedFiles = files.filter((file) => selectedFileIds.includes(file.id))
 
+  // ── CRS Selection Modal States ──────────────────────────────────────────
+  const [showCrsModal, setShowCrsModal] = useState<boolean>(false)
+  const [pendingSegyFiles, setPendingSegyFiles] = useState<File[]>([])
+  const [inspectionResult, setInspectionResult] = useState<SegyHeaderInspectionResult | null>(null)
+  const [inspectingHeader, setInspectingHeader] = useState<boolean>(false)
+
   async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.target.files ?? [])
     event.target.value = ''
     if (selectedFiles.length === 0) return
 
+    setPendingSegyFiles(selectedFiles)
+    setShowCrsModal(true)
+    setInspectingHeader(true)
+    setInspectionResult(null)
+
     try {
-      const fileIds = await uploadFiles(selectedFiles)
+      // Pre-inspect the first file's textual header to detect source CRS
+      const result = await inspectHeader(selectedFiles[0])
+      setInspectionResult(result)
+    } catch (err: any) {
+      console.warn('Lỗi khi inspect header SEG-Y:', err)
+      // Fallback default inspection if inspection fails
+      setInspectionResult({
+        filename: selectedFiles[0].name,
+        source_crs: 'EPSG:4326',
+        source_crs_name: 'WGS 84 (Mặc định)',
+        default_target_crs: 'EPSG:4326',
+        default_target_crs_name: 'WGS 84 (Kinh độ / Vĩ độ - EPSG:4326)',
+        trace_count: 0,
+        textual_header_preview: null,
+      })
+    } finally {
+      setInspectingHeader(false)
+    }
+  }
+
+  async function handleConfirmCrsUpload(sourceCrs: string, targetCrs: string) {
+    if (pendingSegyFiles.length === 0) return
+    setShowCrsModal(false)
+
+    try {
+      const fileIds = await uploadFiles(pendingSegyFiles, sourceCrs, targetCrs)
       if (fileIds.length > 0) setSelectedFileIds(fileIds)
     } catch {
       // Error handled by hook
+    } finally {
+      setPendingSegyFiles([])
+      setInspectionResult(null)
     }
   }
 
@@ -553,7 +594,8 @@ export const DashboardPage: React.FC = () => {
     setExportingSegyId(poly.id)
     setSegyExportError(null)
     try {
-      const results = await exportSegySpatialFilter(poly.ring, poly.name, selectedFileIds)
+      const activeCrs = selectedFiles[0]?.source_crs
+      const results = await exportSegySpatialFilter(poly.ring, poly.name, selectedFileIds, activeCrs)
       if (results.length === 0) {
         setSegyExportError(`Không tìm thấy đoạn line nào nằm trong polygon "${poly.name}"`)
       } else if (results.length === 1) {
@@ -1019,6 +1061,7 @@ export const DashboardPage: React.FC = () => {
           <SeismicMap
             data={layers}
             blockData={blockGeoJSON}
+            files={files}
             showLines={showLines}
             showPoints={showPoints}
             showTraces={showTraces}
@@ -1388,6 +1431,20 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* CRS CONFIGURATION & SELECTION MODAL */}
+      <CrsConfigModal
+        isOpen={showCrsModal}
+        files={pendingSegyFiles}
+        inspection={inspectionResult}
+        inspecting={inspectingHeader}
+        onClose={() => {
+          setShowCrsModal(false)
+          setPendingSegyFiles([])
+          setInspectionResult(null)
+        }}
+        onConfirm={handleConfirmCrsUpload}
+      />
     </main>
   )
 }

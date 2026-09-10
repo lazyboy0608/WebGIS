@@ -18,7 +18,7 @@ import VectorTileLayer from 'ol/layer/VectorTile'
 import VectorTileSource from 'ol/source/VectorTile'
 import MVT from 'ol/format/MVT'
 import { getSegyMvtTileUrlTemplate } from '../api/seismicApi'
-import type { GeoJSONFeatureCollection, Geometry, LayerData } from '../types/api'
+import type { FileListItem, GeoJSONFeatureCollection, Geometry, LayerData } from '../types/api'
 import { clipLineStringByPolygon, isPointInPolygon } from '../utils/geoClipping'
 
 export type BlockClickInfo = {
@@ -37,6 +37,7 @@ export type BlockClickInfo = {
 type Props = {
   data: LayerData | null
   blockData: GeoJSONFeatureCollection | null
+  files?: FileListItem[]
   showLines: boolean
   showPoints: boolean
   showTraces: boolean
@@ -157,9 +158,37 @@ function extractPolygonRingFromOlFeature(feature: Feature): [number, number][] {
   return []
 }
 
+function getLineDisplayName(
+  properties: Record<string, unknown>,
+  filesList: FileListItem[]
+): string {
+  // 1. Try to find the file from files list by segy_file_id, file_id or id
+  const fileId = properties.segy_file_id ?? properties.file_id ?? properties.id
+  if (fileId != null) {
+    const file = filesList.find((f) => f.id === Number(fileId))
+    if (file && file.filename) {
+      return file.filename.replace(/\.(sgy|segy)$/i, '').replace(/\.[^/.]+$/, '')
+    }
+  }
+
+  // 2. Try direct filename if present in properties
+  if (typeof properties.filename === 'string' && properties.filename) {
+    return properties.filename.replace(/\.(sgy|segy)$/i, '').replace(/\.[^/.]+$/, '')
+  }
+
+  // 3. Fallback to line_id or id (clean extension if any)
+  const lineIdStr = String(properties.line_id ?? properties.id ?? '')
+  if (lineIdStr) {
+    return lineIdStr.replace(/\.(sgy|segy)$/i, '').replace(/\.[^/.]+$/, '')
+  }
+
+  return 'Seismic Line'
+}
+
 export function SeismicMap({
   data,
   blockData,
+  files = [],
   showLines,
   showPoints,
   showTraces,
@@ -191,6 +220,12 @@ export function SeismicMap({
     mvt: VectorTileLayer
   } | null>(null)
   const [hoveredLine, setHoveredLine] = useState<HoveredLine>(null)
+  const hoveredMvtLineIdRef = useRef<string | number | null>(null)
+
+  const filesRef = useRef(files)
+  useEffect(() => {
+    filesRef.current = files
+  }, [files])
 
   const onBlockClickRef = useRef(onBlockClick)
   useEffect(() => {
@@ -280,7 +315,16 @@ export function SeismicMap({
         const layerName = feature.get('layer')
         if (layerName === 'traces') return showTracesRef.current ? traceStyle : undefined
         if (layerName === 'shot_points') return showPointsRef.current ? pointStyle : undefined
-        if (layerName === 'lines') return showLinesRef.current ? defaultLineStyle : undefined
+        if (layerName === 'lines') {
+          if (!showLinesRef.current) return undefined
+          const featId = feature.get('id') ?? feature.get('line_id')
+          const isHovered =
+            hoveredMvtLineIdRef.current != null &&
+            (feature.get('id') === hoveredMvtLineIdRef.current ||
+              feature.get('line_id') === hoveredMvtLineIdRef.current ||
+              featId === hoveredMvtLineIdRef.current)
+          return isHovered ? defaultLineHoverStyle : defaultLineStyle
+        }
         return undefined
       },
     })
@@ -334,34 +378,99 @@ export function SeismicMap({
         return
       }
 
-      const targetLayers = [lines, insideLines, outsideLines]
-      const hit = map.forEachFeatureAtPixel(
+      const vectorLayers = [lines, insideLines, outsideLines]
+      let hitFeature: any = null
+      let hitLayer: any = null
+
+      map.forEachFeatureAtPixel(
         event.pixel,
-        (feature, layer) => (targetLayers.includes(layer as any) ? feature : undefined),
+        (feature, layer) => {
+          if (vectorLayers.includes(layer as any)) {
+            hitFeature = feature
+            hitLayer = layer
+            return true
+          }
+          if (layer === mvtLayer) {
+            const layerName = feature.get('layer')
+            if (layerName === 'lines' && showLinesRef.current) {
+              hitFeature = feature
+              hitLayer = layer
+              return true
+            }
+          }
+          return undefined
+        },
         { hitTolerance: 7 }
       )
 
-      targetLayers.forEach((layer) => {
+      // Update vector layers hover state
+      vectorLayers.forEach((layer) => {
+        let changed = false
         layer.getSource()?.getFeatures().forEach((feature) => {
-          feature.set('hovered', feature === hit)
+          const isHovered = feature === hitFeature
+          if (feature.get('hovered') !== isHovered) {
+            feature.set('hovered', isHovered)
+            changed = true
+          }
         })
-        layer.changed()
+        if (changed) {
+          layer.changed()
+        }
       })
 
-      if (!hit) {
+      // Update MVT layer hover state
+      const nextMvtHoverId =
+        hitLayer === mvtLayer && hitFeature
+          ? (hitFeature.get('id') ?? hitFeature.get('line_id') ?? null)
+          : null
+
+      if (hoveredMvtLineIdRef.current !== nextMvtHoverId) {
+        hoveredMvtLineIdRef.current = nextMvtHoverId
+        mvtLayer.changed()
+      }
+
+      if (!hitFeature) {
         setHoveredLine(null)
         targetEl.style.cursor = ''
         return
       }
 
-      const properties = hit.getProperties()
+      const rawProps = hitFeature.getProperties() as Record<string, unknown>
+      const lineIdentifier = rawProps.line_id ?? rawProps.id
+      let finalProps: Record<string, unknown> = { ...rawProps }
+
+      if (dataRef.current?.lines?.features) {
+        const matched = dataRef.current.lines.features.find((f) => {
+          const p = f.properties || {}
+          return (
+            (p.id != null && (p.id === rawProps.id || p.id === lineIdentifier)) ||
+            (p.line_id != null && (p.line_id === rawProps.line_id || p.line_id === lineIdentifier))
+          )
+        })
+        if (matched?.properties) {
+          finalProps = { ...finalProps, ...matched.properties }
+        }
+      }
+
       setHoveredLine({
-        properties,
+        properties: finalProps,
         coordinate: toLonLat(event.coordinate) as [number, number],
         pixel: event.pixel as [number, number],
       })
       targetEl.style.cursor = 'pointer'
     })
+
+    const handleMouseLeave = () => {
+      setHoveredLine(null)
+      if (hoveredMvtLineIdRef.current != null) {
+        hoveredMvtLineIdRef.current = null
+        layersRef.current?.mvt.changed()
+      }
+      const targetEl = map.getTargetElement()
+      if (targetEl) targetEl.style.cursor = ''
+    }
+    const viewport = map.getViewport()
+    viewport.addEventListener('mouseleave', handleMouseLeave)
 
     // Click handler for Block selection & Popup
     map.on('singleclick', (event) => {
@@ -419,6 +528,7 @@ export function SeismicMap({
     })
 
     return () => {
+      viewport.removeEventListener('mouseleave', handleMouseLeave)
       map.setTarget(undefined)
       mapRef.current = null
     }
@@ -832,7 +942,7 @@ export function SeismicMap({
           style={{ left: hoveredLine.pixel[0] + 16, top: hoveredLine.pixel[1] + 16 }}
         >
           <span className="tooltip-kicker">SEISMIC LINE</span>
-          <strong>{String(hoveredLine.properties.line_id ?? hoveredLine.properties.id)}</strong>
+          <strong>{getLineDisplayName(hoveredLine.properties, filesRef.current || [])}</strong>
           <div className="tooltip-grid">
             <span>
               Longitude <b>{hoveredLine.coordinate[0].toFixed(6)}</b>
@@ -841,10 +951,10 @@ export function SeismicMap({
               Latitude <b>{hoveredLine.coordinate[1].toFixed(6)}</b>
             </span>
             <span>
-              Traces <b>{String(hoveredLine.properties.trace_count ?? 0)}</b>
+              Traces <b>{String(hoveredLine.properties.trace_count ?? hoveredLine.properties.point_count ?? 0)}</b>
             </span>
             <span>
-              Shot points <b>{String(hoveredLine.properties.shot_point_count ?? 0)}</b>
+              Shot points <b>{String(hoveredLine.properties.shot_point_count ?? hoveredLine.properties.point_count ?? 0)}</b>
             </span>
           </div>
         </div>

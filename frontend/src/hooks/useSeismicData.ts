@@ -8,6 +8,7 @@ import {
   fetchSegySummary,
   fetchSegyTaskStatus,
   fetchSegyTraces,
+  inspectSegyHeader,
   subscribeSegyProgressWebSocket,
   uploadSegyFiles as uploadSegyFilesApi,
 } from '../api/seismicApi';
@@ -186,7 +187,15 @@ export function useSeismicData(fileIds: number[]) {
     return () => controller.abort();
   }, [filesRefreshToken]);
 
-  async function uploadFiles(filesToUpload: File[], sourceCrs?: string): Promise<number[]> {
+  async function inspectHeader(file: File) {
+    return inspectSegyHeader(file);
+  }
+
+  async function uploadFiles(
+    filesToUpload: File[],
+    sourceCrs?: string,
+    targetCrs?: string
+  ): Promise<number[]> {
     if (filesToUpload.length === 0) return [];
     if (filesToUpload.some((file) => !file.name.toLowerCase().endsWith('.sgy'))) {
       throw new Error('Chỉ hỗ trợ file SEG-Y có phần mở rộng .sgy');
@@ -200,7 +209,7 @@ export function useSeismicData(fileIds: number[]) {
     const clientId = `client_${Date.now()}`;
 
     try {
-      const { taskIds, fileIds: initialFileIds } = await uploadSegyFilesApi(filesToUpload, sourceCrs);
+      const { taskIds, fileIds: initialFileIds } = await uploadSegyFilesApi(filesToUpload, sourceCrs, targetCrs);
 
       let finalFileIds: number[] = [];
       if (taskIds.length > 0) {
@@ -339,5 +348,5 @@ export function useSeismicData(fileIds: number[]) {
     }
   }
 
-  return { apiBaseUrl: API_DATA_SERVING_URL, files, summary, layers, loading, uploading, progressMessage, progressPercent, deleting, exporting, exportError, error, uploadFiles, deleteFiles, exportCsv };
+  return { apiBaseUrl: API_DATA_SERVING_URL, files, summary, layers, loading, uploading, progressMessage, progressPercent, deleting, exporting, exportError, error, inspectHeader, uploadFiles, deleteFiles, exportCsv };
 }

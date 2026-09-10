@@ -38,6 +38,10 @@ def ensure_file_exists(
     "/{file_id}/processed/summary",
     response_model=ProcessedDataSummary,
 )
+@router.get(
+    "/{file_id}/summary",
+    response_model=ProcessedDataSummary,
+)
 def get_processed_summary(
     file_id: int,
     service: ProcessedDataQueryService = Depends(get_query_service),

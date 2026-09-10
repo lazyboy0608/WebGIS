@@ -1,0 +1,41 @@
+name: WebGIS On-Premise LAN Continuous Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+# Prevent concurrent deployments which could cause race conditions
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to On-Premise LAN Server
+    runs-on: self-hosted
+
+    steps:
+      - name: 1. Checkout Latest Code
+        uses: actions/checkout@v4
+
+      - name: 2. Build and Restart Docker Containers
+        run: |
+          echo "==> Building and restarting WebGIS Docker services..."
+          docker compose up -d --build --remove-orphans
+
+      - name: 3. Apply Database Migrations (Alembic)
+        run: |
+          echo "==> Running database schema migrations..."
+          docker compose exec -T data-serving alembic upgrade head
+
+      - name: 4. Clean Up Unused Docker Images and Build Cache
+        run: |
+          echo "==> Pruning dangling Docker images to save disk space..."
+          docker image prune -f
+
+      - name: 5. Deployment Health Check
+        run: |
+          echo "==> Checking services health status..."
+          docker compose ps
+          echo "==> Deployment completed successfully!"

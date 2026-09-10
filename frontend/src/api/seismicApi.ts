@@ -1,9 +1,11 @@
 import { apiClient, API_DATA_SERVING_URL, API_PROCESSING_URL } from './client';
 import type {
   BatchDeleteResponse,
+  CrsPreset,
   FileListResponse,
   GeoJSONFeatureCollection,
   ProcessedDataSummary,
+  SegyHeaderInspectionResult,
   SegyTaskStatusResponse,
 } from '../types/api';
 
@@ -28,28 +30,44 @@ export async function fetchSegyFiles(signal?: AbortSignal): Promise<FileListResp
   });
 }
 
-export async function fetchSegySummary(fileId: number, signal?: AbortSignal): Promise<ProcessedDataSummary> {
-  return apiClient<ProcessedDataSummary>(`${API_DATA_SERVING_URL}/api/segy-files/${fileId}/processed/summary`, {
-    signal,
-  });
+export async function fetchSegySummary(
+  fileId: number,
+  signal?: AbortSignal
+): Promise<ProcessedDataSummary> {
+  return apiClient<ProcessedDataSummary>(
+    `${API_DATA_SERVING_URL}/api/segy-files/${fileId}/processed/summary`,
+    { signal }
+  );
 }
 
-export async function fetchSegyLines(fileId: number, signal?: AbortSignal): Promise<GeoJSONFeatureCollection> {
-  return apiClient<GeoJSONFeatureCollection>(`${API_DATA_SERVING_URL}/api/segy-files/${fileId}/processed/lines?offset=0&limit=10000`, {
-    signal,
-  });
+export async function fetchSegyLines(
+  fileId: number,
+  signal?: AbortSignal
+): Promise<GeoJSONFeatureCollection> {
+  return apiClient<GeoJSONFeatureCollection>(
+    `${API_DATA_SERVING_URL}/api/segy-files/${fileId}/processed/lines?limit=10000`,
+    { signal }
+  );
 }
 
-export async function fetchSegyShotPoints(fileId: number, signal?: AbortSignal): Promise<GeoJSONFeatureCollection> {
-  return apiClient<GeoJSONFeatureCollection>(`${API_DATA_SERVING_URL}/api/segy-files/${fileId}/processed/shot-points?offset=0&limit=10000`, {
-    signal,
-  });
+export async function fetchSegyShotPoints(
+  fileId: number,
+  signal?: AbortSignal
+): Promise<GeoJSONFeatureCollection> {
+  return apiClient<GeoJSONFeatureCollection>(
+    `${API_DATA_SERVING_URL}/api/segy-files/${fileId}/processed/shot-points?limit=10000`,
+    { signal }
+  );
 }
 
-export async function fetchSegyTraces(fileId: number, signal?: AbortSignal): Promise<GeoJSONFeatureCollection> {
-  return apiClient<GeoJSONFeatureCollection>(`${API_DATA_SERVING_URL}/api/segy-files/${fileId}/processed/traces?offset=0&limit=10000`, {
-    signal,
-  });
+export async function fetchSegyTraces(
+  fileId: number,
+  signal?: AbortSignal
+): Promise<GeoJSONFeatureCollection> {
+  return apiClient<GeoJSONFeatureCollection>(
+    `${API_DATA_SERVING_URL}/api/segy-files/${fileId}/processed/traces?limit=10000`,
+    { signal }
+  );
 }
 
 export type SegyUploadResult = {
@@ -61,12 +79,30 @@ export async function fetchSegyTaskStatus(taskId: string): Promise<SegyTaskStatu
   return apiClient<SegyTaskStatusResponse>(`${API_PROCESSING_URL}/api/segy-files/tasks/${taskId}`);
 }
 
-export async function uploadSegyFiles(files: File[], sourceCrs?: string): Promise<SegyUploadResult> {
+export async function inspectSegyHeader(file: File): Promise<SegyHeaderInspectionResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient<SegyHeaderInspectionResult>(`${API_PROCESSING_URL}/api/segy-files/inspect-header`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function fetchCrsPresets(): Promise<CrsPreset[]> {
+  return apiClient<CrsPreset[]>(`${API_PROCESSING_URL}/api/segy-files/crs-presets`);
+}
+
+export async function uploadSegyFiles(
+  files: File[],
+  sourceCrs?: string,
+  targetCrs?: string
+): Promise<SegyUploadResult> {
   if (files.length === 0) return { taskIds: [], fileIds: [] };
 
   const formData = new FormData();
   files.forEach((file) => formData.append('files', file));
   if (sourceCrs) formData.append('source_crs', sourceCrs);
+  if (targetCrs) formData.append('target_crs', targetCrs);
 
   const endpoint = files.length === 1 ? '/api/segy-files/upload' : '/api/segy-files/upload/batch';
   if (files.length === 1) {
@@ -141,7 +177,8 @@ type BatchExportSegyResponse = {
 export async function exportSegySpatialFilter(
   polygonRing: [number, number][],
   polygonName: string = 'spatial_filter',
-  fileIds?: number[]
+  fileIds?: number[],
+  targetCrs?: string
 ): Promise<ExportSegyResult[]> {
   const result = await apiClient<BatchExportSegyResponse>(
     `${API_DATA_SERVING_URL}/api/segy-files/export/segy/spatial-filter`,
@@ -152,6 +189,7 @@ export async function exportSegySpatialFilter(
         polygon_ring: polygonRing,
         polygon_name: polygonName,
         file_ids: fileIds && fileIds.length > 0 ? fileIds : undefined,
+        target_crs: targetCrs,
       }),
     }
   );

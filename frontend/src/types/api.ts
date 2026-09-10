@@ -111,3 +111,20 @@ export type SegyTaskStatusResponse = {
   updated_at?: string
 }
 
+export type SegyHeaderInspectionResult = {
+  filename: string
+  source_crs: string
+  source_crs_name: string
+  default_target_crs: string
+  default_target_crs_name: string
+  trace_count: number
+  textual_header_preview?: string | null
+}
+
+export type CrsPreset = {
+  code: string
+  name: string
+  description?: string | null
+  category?: string | null
+}
+

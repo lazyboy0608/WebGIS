@@ -8,7 +8,9 @@ from app.services.crs_transformer import CRSTransformer
 
 class WGS84LineGeometryBuilder:
     """
-    Builds a WGS84 LineString from a source Line.
+    Builds a LineString in WGS84 (EPSG:4326) from a source Line
+    to ensure all PostGIS spatial operations (MVT, bounding boxes,
+    intersections, spatial filters, and WebGIS map views) work accurately.
     """
 
     def __init__(
@@ -21,16 +23,18 @@ class WGS84LineGeometryBuilder:
         self,
         line: Line,
         source_crs: CoordinateReferenceSystem | str | None = None,
+        target_crs: CoordinateReferenceSystem | str | None = None,
     ) -> LineString:
 
-        transformer = self.crs_transformer
-        if source_crs is not None:
-            if isinstance(source_crs, str):
-                source_crs = CoordinateReferenceSystem(name=source_crs)
-            transformer = CRSTransformer(source_crs)
+        s_crs = source_crs if source_crs is not None else self.crs_transformer.source_crs_definition
+        if isinstance(s_crs, str):
+            s_crs = CoordinateReferenceSystem(name=s_crs)
+
+        # The spatial geometry stored in PostGIS for map rendering must ALWAYS be in WGS84 (EPSG:4326)
+        transformer = CRSTransformer(source_crs=s_crs, target_crs="EPSG:4326")
 
         transformed_coordinates = [
-            transformer.transform_to_wgs84(
+            transformer.transform(
                 coordinate
             )
             for coordinate in line.coordinates

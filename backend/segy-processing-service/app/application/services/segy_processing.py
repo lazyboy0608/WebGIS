@@ -40,6 +40,7 @@ class SegyProcessingService:
         self,
         file_path: Path,
         source_crs: str | None = None,
+        target_crs: str | None = None,
     ) -> ProcessedSegyData:
         metadata = self._segy_reader.read_metadata(file_path)
         raw_traces = list(
@@ -58,7 +59,7 @@ class SegyProcessingService:
             line_key = next(iter(line_keys))
             line = self._line_builder.build(processed_traces)
             topology_analysis = self._topology_analyzer.analyze(processed_traces)
-            wgs84_geometry = self._build_wgs84_geometry(line, source_crs)
+            wgs84_geometry = self._build_wgs84_geometry(line, source_crs, target_crs)
             grouped_lines = [
                 ProcessedLine(
                     line_key=line_key,
@@ -86,6 +87,7 @@ class SegyProcessingService:
                 geometry = self._build_wgs84_geometry(
                     grouped_line,
                     source_crs,
+                    target_crs,
                 )
                 for index, coordinate in zip(
                     grouped_line.trace_indices,
@@ -133,12 +135,13 @@ class SegyProcessingService:
             lines=grouped_lines,
         )
 
-    def _build_wgs84_geometry(self, line, source_crs):
-        if source_crs is None:
-            return self._wgs84_geometry_builder.build(line)
+    def _build_wgs84_geometry(self, line, source_crs, target_crs=None):
+        s_crs = CoordinateReferenceSystem(name=source_crs) if source_crs else None
+        t_crs = CoordinateReferenceSystem(name=target_crs) if target_crs else None
         return self._wgs84_geometry_builder.build(
             line,
-            source_crs=CoordinateReferenceSystem(name=source_crs),
+            source_crs=s_crs,
+            target_crs=t_crs,
         )
 
     @staticmethod
@@ -152,6 +155,7 @@ class SegyProcessingService:
         self,
         filename: str,
         source_crs: str | None = None,
+        target_crs: str | None = None,
     ) -> ProcessedSegyData:
         if self._file_storage is None:
             raise RuntimeError("File storage is not configured.")
@@ -160,7 +164,4 @@ class SegyProcessingService:
         if not file_path.exists():
             raise FileNotFoundError(f"SEG-Y file not found: {filename}")
 
-        if source_crs is None:
-            return self.process(file_path)
-
-        return self.process(file_path, source_crs=source_crs)
+        return self.process(file_path, source_crs=source_crs, target_crs=target_crs)

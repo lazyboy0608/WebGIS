@@ -71,6 +71,7 @@ def list_files(
 
 
 @router.get("/{file_id}/processed/summary", response_model=ProcessedDataSummary)
+@router.get("/{file_id}/summary", response_model=ProcessedDataSummary)
 def get_processed_summary(
     file_id: int,
     service: ProcessedDataQueryService = Depends(get_query_service),
@@ -294,6 +295,7 @@ def export_spatial_filter_segy(
             polygon_ring=body.polygon_ring,
             polygon_name=body.polygon_name,
             file_ids=body.file_ids,
+            target_crs=body.target_crs,
         )
         results = [ExportSegyResult.model_validate(r) for r in raw_results]
         return BatchExportSegyResponse(results=results, total=len(results))

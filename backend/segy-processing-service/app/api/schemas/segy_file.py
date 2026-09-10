@@ -102,3 +102,24 @@ class SegyTaskStatusResponse(BaseModel):
     updated_at: str | None = None
 
 
+class SegyHeaderInspectionResponse(BaseModel):
+    """Result of pre-inspecting SEG-Y textual/binary headers."""
+
+    filename: str
+    source_crs: str
+    source_crs_name: str
+    default_target_crs: str = "EPSG:4326"
+    default_target_crs_name: str = "WGS 84 (Kinh độ / Vĩ độ - EPSG:4326)"
+    trace_count: int = 0
+    textual_header_preview: str | None = None
+
+
+class CrsPresetResponse(BaseModel):
+    """A CRS preset option for users to select."""
+
+    code: str
+    name: str
+    description: str | None = None
+    category: str | None = None
+
+
