@@ -7,6 +7,7 @@ from typing import Any
 from geoalchemy2 import WKTElement
 from geoalchemy2.shape import to_shape
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.orm import Session
 
 from app.core.redis_client import redis_cache
@@ -438,7 +439,7 @@ class ProcessedDataQueryService:
         if not file_ids or not polygon_rings:
             return {"inside": feature_collection([]), "outside": feature_collection([])}
 
-        poly_strings = []
+        poly_wkt_list = []
         for ring in polygon_rings:
             if not ring or len(ring) < 3:
                 continue
@@ -446,24 +447,38 @@ class ProcessedDataQueryService:
             if closed_ring[0] != closed_ring[-1]:
                 closed_ring.append(closed_ring[0])
             coords_str = ", ".join(f"{pt[0]} {pt[1]}" for pt in closed_ring)
-            poly_strings.append(f"(({coords_str}))")
+            poly_wkt_list.append(f"POLYGON(({coords_str}))")
 
-        if not poly_strings:
+        if not poly_wkt_list:
             return {"inside": feature_collection([]), "outside": feature_collection([])}
 
-        wkt = f"MULTIPOLYGON({', '.join(poly_strings)})"
-        poly_geom_4326 = func.ST_GeomFromText(wkt, 4326)
-        poly_geom_3857 = func.ST_Transform(poly_geom_4326, 3857)
+        # Build union of valid polygons in 3857
+        # ST_UnaryUnion with ST_MakeValid ensures any self-intersecting or overlapping rings are normalized
+        if len(poly_wkt_list) == 1:
+            poly_raw = func.ST_GeomFromText(poly_wkt_list[0], 4326)
+            poly_geom_3857 = func.ST_UnaryUnion(
+                func.ST_MakeValid(
+                    func.ST_Transform(func.ST_MakeValid(poly_raw), 3857)
+                )
+            )
+        else:
+            poly_exprs = [
+                func.ST_MakeValid(func.ST_Transform(func.ST_MakeValid(func.ST_GeomFromText(w, 4326)), 3857))
+                for w in poly_wkt_list
+            ]
+            poly_geom_3857 = func.ST_UnaryUnion(func.ST_Collect(array(poly_exprs)))
 
         line_3857 = func.ST_Transform(SeismicLineModel.geometry, 3857)
+        inside_3857 = func.ST_CollectionExtract(func.ST_Intersection(line_3857, poly_geom_3857), 2)
+        outside_3857 = func.ST_CollectionExtract(func.ST_Difference(line_3857, poly_geom_3857), 2)
 
         query = select(
             SeismicLineModel.id,
             SeismicLineModel.line_id,
             SeismicLineModel.segy_file_id,
             func.ST_Intersects(line_3857, poly_geom_3857).label("intersects"),
-            func.ST_AsGeoJSON(func.ST_Transform(func.ST_Intersection(line_3857, poly_geom_3857), 4326)).label("inside_json"),
-            func.ST_AsGeoJSON(func.ST_Transform(func.ST_Difference(line_3857, poly_geom_3857), 4326)).label("outside_json"),
+            func.ST_AsGeoJSON(func.ST_Transform(inside_3857, 4326)).label("inside_json"),
+            func.ST_AsGeoJSON(func.ST_Transform(outside_3857, 4326)).label("outside_json"),
             func.ST_AsGeoJSON(SeismicLineModel.geometry).label("full_json"),
         ).where(SeismicLineModel.segy_file_id.in_(file_ids))
 

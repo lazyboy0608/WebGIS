@@ -1,11 +1,17 @@
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+import io
+import mimetypes
+import time
+from pathlib import Path
+from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.api.schemas.auth import TokenResponse, UserLogin, UserRegister, UserResponse
+from app.api.schemas.auth import TokenResponse, UserLogin, UserRegister, UserResponse, UserUpdate
 from app.config import settings
 from app.core.rate_limiter import ip_rate_limit
 from app.database import get_db_session
+from app.infrastructure.storage.minio_client import minio_manager
 from app.models import UserModel
 from app.services.security import (
     create_access_token,
@@ -214,3 +220,92 @@ def logout(
 def get_me(current_user: UserModel = Depends(get_current_user)):
     """Lấy thông tin tài khoản đang đăng nhập."""
     return UserResponse.model_validate(current_user)
+
+
+@router.put("/me", response_model=UserResponse)
+def update_me(
+    user_in: UserUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    """Cập nhật thông tin cá nhân (Họ và tên, Số điện thoại, Ngày sinh)."""
+    if user_in.full_name is not None:
+        current_user.full_name = user_in.full_name.strip()
+    if user_in.phone_number is not None:
+        current_user.phone_number = user_in.phone_number.strip()
+    if user_in.date_of_birth is not None:
+        current_user.date_of_birth = user_in.date_of_birth
+
+    db.commit()
+    db.refresh(current_user)
+    return UserResponse.model_validate(current_user)
+
+
+@router.post("/me/avatar", response_model=UserResponse)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    """Tải lên ảnh đại diện, lưu vào MinIO bucket user-avatars và cập nhật avatar_url."""
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tên file không hợp lệ.",
+        )
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in [".jpg", ".jpeg", ".png", ".webp", ".gif"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chỉ hỗ trợ file ảnh định dạng .jpg, .jpeg, .png, .webp, .gif",
+        )
+
+    contents = await file.read()
+    if len(contents) > 10 * 1024 * 1024:  # 10MB limit
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Dung lượng ảnh đại diện không được vượt quá 10MB.",
+        )
+
+    timestamp = int(time.time())
+    object_name = f"avatar_user_{current_user.id}_{timestamp}{ext}"
+    content_type = file.content_type or mimetypes.guess_type(file.filename)[0] or "image/png"
+
+    # Lưu vào MinIO
+    minio_manager.upload_bytes(
+        bucket_name=settings.minio_bucket_avatars,
+        object_name=object_name,
+        data=contents,
+        content_type=content_type,
+    )
+
+    # Cập nhật avatar_url trong database
+    current_user.avatar_url = f"/api/v1/auth/avatar/{object_name}"
+    db.commit()
+    db.refresh(current_user)
+
+    return UserResponse.model_validate(current_user)
+
+
+@router.get("/avatar/{filename}")
+def get_avatar(filename: str):
+    """Lấy ảnh đại diện từ MinIO và trả về dữ liệu ảnh."""
+    clean_filename = Path(filename).name
+    try:
+        minio_response = minio_manager.client.get_object(
+            settings.minio_bucket_avatars,
+            clean_filename,
+        )
+        content_type = mimetypes.guess_type(clean_filename)[0] or "image/png"
+        return StreamingResponse(
+            io.BytesIO(minio_response.read()),
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy ảnh đại diện",
+        )
+

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.redis_client import processing_redis
+from app.core.task_manager import get_task_manager
 from app.infrastructure.database.models import SeismicBlockModel
 from app.infrastructure.storage.minio_file_storage import MinioFileStorage
 
@@ -27,11 +28,33 @@ class BlockProcessingService:
             bucket_name=settings.MINIO_BUCKET_BLOCKS_RAW,
         )
 
+    def _update_progress(
+        self,
+        task_id: Optional[str],
+        status: str,
+        percent: int,
+        message: str,
+        result: Optional[dict] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        if not task_id:
+            return
+        task_mgr = get_task_manager()
+        task_mgr.update_task(
+            task_id=task_id,
+            status=status,
+            progress_percent=percent,
+            message=message,
+            result=result,
+            error=error,
+        )
+
     def process_shapefile_zip(
         self,
         zip_bytes: bytes,
         filename: str,
         user_id: Optional[int] = None,
+        task_id: Optional[str] = None,
     ) -> List[SeismicBlockModel]:
         """
         1. Save raw zip file to MinIO (bucket: blocks-raw-inputs).
@@ -41,45 +64,51 @@ class BlockProcessingService:
         5. Extract 'Block_id' attribute as block_code.
         6. Calculate area in km² and save records to seismic_blocks table in PostGIS.
         """
-        # Step 1: Upload raw zip to MinIO
-        minio_path = self.minio_storage.save(filename, zip_bytes)
-        source_file_key = str(minio_path)
+        try:
+            self._update_progress(task_id, "UPLOADING", 10, "Đang lưu trữ file Shapefile zip vào MinIO...")
+            # Step 1: Upload raw zip to MinIO
+            minio_path = self.minio_storage.save(filename, zip_bytes)
+            source_file_key = str(minio_path)
 
-        imported_blocks: List[SeismicBlockModel] = []
+            imported_blocks: List[SeismicBlockModel] = []
 
-        # Step 2: Extract zip to temporary directory
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            zip_path = Path(tmp_dir) / filename
-            zip_path.write_bytes(zip_bytes)
+            # Step 2: Extract zip to temporary directory
+            self._update_progress(task_id, "PROCESSING", 25, "Đang giải nén và kiểm tra thành phần Shapefile...")
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                zip_path = Path(tmp_dir) / filename
+                zip_path.write_bytes(zip_bytes)
 
-            with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                zip_ref.extractall(tmp_dir)
+                with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                    zip_ref.extractall(tmp_dir)
 
-            # Find .shp file
-            shp_files = list(Path(tmp_dir).rglob("*.shp"))
-            if not shp_files:
-                raise ValueError("Không tìm thấy file .shp trong file zip đã tải lên.")
+                # Find .shp file
+                shp_files = list(Path(tmp_dir).rglob("*.shp"))
+                if not shp_files:
+                    raise ValueError("Không tìm thấy file .shp trong file zip đã tải lên.")
 
-            shp_path = shp_files[0]
+                shp_path = shp_files[0]
 
-            # Step 3: Load with GeoPandas
-            gdf = gpd.read_file(shp_path)
-            if gdf.empty:
-                raise ValueError("File Shapefile rỗng, không chứa đối tượng hình học nào.")
+                # Step 3: Load with GeoPandas
+                self._update_progress(task_id, "PROCESSING", 45, "Đang nạp dữ liệu không gian & chuẩn hóa hệ tọa độ EPSG:4326...")
+                gdf = gpd.read_file(shp_path)
+                if gdf.empty:
+                    raise ValueError("File Shapefile rỗng, không chứa đối tượng hình học nào.")
 
-            # Step 4: CRS handling & Reproject to EPSG:4326
-            if gdf.crs is not None:
-                if gdf.crs.to_epsg() != 4326:
-                    gdf = gdf.to_crs(epsg=4326)
-            else:
-                # Force to EPSG:4326 if unassigned
-                gdf = gdf.set_crs(epsg=4326, allow_override=True)
+                # Step 4: CRS handling & Reproject to EPSG:4326
+                if gdf.crs is not None:
+                    if gdf.crs.to_epsg() != 4326:
+                        gdf = gdf.to_crs(epsg=4326)
+                else:
+                    # Force to EPSG:4326 if unassigned
+                    gdf = gdf.set_crs(epsg=4326, allow_override=True)
 
-            # Fix invalid geometries
-            gdf["geometry"] = gdf["geometry"].make_valid()
+                # Fix invalid geometries
+                gdf["geometry"] = gdf["geometry"].make_valid()
 
-            # Calculate area in km² using Web Mercator EPSG:3857 (or metric projection)
-            gdf_metric = gdf.to_crs(epsg=3857)
+                # Calculate area in km² using Web Mercator EPSG:3857 (or metric projection)
+                gdf_metric = gdf.to_crs(epsg=3857)
+
+                self._update_progress(task_id, "PROCESSING", 65, "Đang chuẩn hóa hình học và trích xuất thuộc tính các Lô...")
 
             # Detect Block Code field (prioritize 'Block_id', then case-insensitive match)
             block_code_col = None
@@ -162,9 +191,26 @@ class BlockProcessingService:
                 self.db.add(block_model)
                 imported_blocks.append(block_model)
 
+            self._update_progress(task_id, "PROCESSING", 85, f"Đang lưu {len(imported_blocks)} Lô địa chấn vào PostGIS...")
             self.db.commit()
             processing_redis.invalidate_data_cache_pattern("blocks:*")
             for b in imported_blocks:
                 self.db.refresh(b)
 
-        return imported_blocks
+            self._update_progress(
+                task_id,
+                "COMPLETED",
+                100,
+                f"Đã nạp thành công {len(imported_blocks)} Lô địa chấn vào hệ thống.",
+                result={"imported_count": len(imported_blocks), "filename": filename},
+            )
+            return imported_blocks
+        except Exception as e:
+            self._update_progress(
+                task_id,
+                "FAILED",
+                0,
+                f"Lỗi khi xử lý file Lô: {str(e)}",
+                error=str(e),
+            )
+            raise

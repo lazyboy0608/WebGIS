@@ -312,6 +312,9 @@ class ExportService:
             ring_coords.append(ring_coords[0])
 
         poly_shape = Polygon(ring_coords)
+        if not poly_shape.is_valid:
+            from shapely.validation import make_valid
+            poly_shape = make_valid(poly_shape)
 
         # Query seismic lines
         line_stmt = select(SeismicLineModel).order_by(SeismicLineModel.id)

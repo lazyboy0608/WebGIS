@@ -186,14 +186,16 @@ export const RegisterPage: React.FC = () => {
           </div>
         </div>
 
-        <button
-          type="button"
-          className="auth-input-toggle"
-          style={{ alignSelf: 'flex-end', marginTop: '-0.5rem', marginBottom: '0.25rem' }}
-          onClick={() => setShowPassword((prev) => !prev)}
-        >
-          {showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-0.25rem' }}>
+          <button
+            type="button"
+            className="auth-input-toggle"
+            style={{ position: 'static' }}
+            onClick={() => setShowPassword((prev) => !prev)}
+          >
+            {showPassword ? '👁️ Ẩn mật khẩu' : '👁️ Hiện mật khẩu'}
+          </button>
+        </div>
 
         <button type="submit" className="auth-submit-btn" disabled={submitting}>
           {submitting ? 'Đang khởi tạo tài khoản...' : 'Đăng ký tài khoản'}

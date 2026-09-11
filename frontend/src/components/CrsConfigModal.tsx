@@ -145,7 +145,7 @@ function cleanTargetCrsInput(input: string, presetList: CrsPreset[]): string {
         {inspecting ? (
           <div className="modal-inspecting-state" style={{ padding: '28px 0', textAlign: 'center' }}>
             <div className="upload-spinner" style={{ margin: '0 auto 12px' }} />
-            <p style={{ color: '#c9d1d9', margin: 0 }}>Đang trích xuất Textual Header từ file SEG-Y...</p>
+            <p style={{ color: '#c9d1d9', margin: 0 }}>Đang trích xuất Header văn bản từ file SEG-Y...</p>
           </div>
         ) : (
           <div className="crs-modal-body" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -165,7 +165,7 @@ function cleanTargetCrsInput(input: string, presetList: CrsPreset[]): string {
             <div className="crs-input-group">
               <div className="crs-input-header">
                 <label className="field-label" style={{ margin: 0 }}>
-                  Hệ tọa độ gốc (Source CRS)
+                  Hệ tọa độ gốc
                 </label>
                 <span
                   className={`crs-source-badge ${
@@ -181,7 +181,7 @@ function cleanTargetCrsInput(input: string, presetList: CrsPreset[]): string {
               </div>
               {inspection?.trace_count ? (
                 <small className="crs-detected-hint">
-                  Đã kiểm tra sơ bộ {inspection.trace_count} trace coordinates.
+                  Đã kiểm tra sơ bộ tọa độ của {inspection.trace_count} trace.
                 </small>
               ) : null}
             </div>
@@ -190,7 +190,7 @@ function cleanTargetCrsInput(input: string, presetList: CrsPreset[]): string {
             <div className="crs-input-group" ref={dropdownRef}>
               <div className="crs-input-header">
                 <label className="field-label" style={{ margin: 0 }}>
-                  Hệ tọa độ đích muốn chuyển đổi (Target CRS)
+                  Hệ tọa độ đích muốn chuyển đổi
                 </label>
                 <small style={{ color: '#58a6ff', fontSize: '0.75rem' }}>
                   Gợi ý: WGS84, UTM 48N/49N, VN-2000...
@@ -261,7 +261,7 @@ function cleanTargetCrsInput(input: string, presetList: CrsPreset[]): string {
                   className="crs-header-toggle-btn"
                   onClick={() => setShowTextualHeader((prev) => !prev)}
                 >
-                  <span>{showTextualHeader ? '▼ Ẩn Textual Header gốc' : '▶ Xem trích đoạn Textual Header gốc (3200 bytes)'}</span>
+                  <span>{showTextualHeader ? '▼ Ẩn Header văn bản gốc' : '▶ Xem trích đoạn Header văn bản gốc (3200 bytes)'}</span>
                 </button>
                 {showTextualHeader && (
                   <pre className="crs-header-content">

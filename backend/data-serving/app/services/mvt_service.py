@@ -26,9 +26,21 @@ class MVTService:
         target_layers = list(layers) if layers else ["lines", "shot_points", "traces"]
         active_file_ids = list(file_ids) if file_ids else ([file_id] if file_id is not None else None)
 
+        # ── 3-Level of Detail (LOD) based on Zoom level z ─────────────
+        # LOD 1 (z < 10):  Overview  → Only 'lines'
+        # LOD 2 (10<=z<14): Regional → 'lines' + 'shot_points'
+        # LOD 3 (z >= 14):  Detailed → 'lines' + 'shot_points' + 'traces'
+        lod_layers: list[str] = []
+        if "lines" in target_layers:
+            lod_layers.append("lines")
+        if "shot_points" in target_layers and z >= 10:
+            lod_layers.append("shot_points")
+        if "traces" in target_layers and z >= 14:
+            lod_layers.append("traces")
+
         # ── 1. Check Redis Cache-Aside ─────────────────────────────────────────
         file_ids_str = ",".join(map(str, sorted(active_file_ids))) if active_file_ids else "all"
-        layers_str = ",".join(sorted(target_layers))
+        layers_str = ",".join(sorted(lod_layers))
         cache_key = f"mvt:{file_ids_str}:{z}:{x}:{y}:{layers_str}"
 
         cached_bytes = redis_cache.get_bytes(cache_key)
@@ -36,7 +48,7 @@ class MVTService:
             logger.info(f"[REDIS CACHE HIT] {cache_key} (Size: {len(cached_bytes)} bytes)")
             return cached_bytes, True
 
-        logger.info(f"[REDIS CACHE MISS] {cache_key} -> Querying PostGIS...")
+        logger.info(f"[REDIS CACHE MISS] {cache_key} -> Querying PostGIS (LOD: {layers_str})...")
         file_filter = ""
         params: dict[str, object] = {"z": z, "x": x, "y": y}
         if active_file_ids:
@@ -45,7 +57,7 @@ class MVTService:
 
         mvt_parts: list[bytes] = []
 
-        if "lines" in target_layers:
+        if "lines" in lod_layers:
             sql_lines = f"""
             WITH tile_env AS (
                 SELECT ST_TileEnvelope(:z, :x, :y) AS bbox
@@ -78,7 +90,7 @@ class MVTService:
             except Exception as e:
                 logger.warning(f"Error generating lines MVT tile z={z},x={x},y={y}: {e}")
 
-        if "shot_points" in target_layers:
+        if "shot_points" in lod_layers:
             sql_sp = f"""
             WITH tile_env AS (
                 SELECT ST_TileEnvelope(:z, :x, :y) AS bbox
@@ -111,7 +123,7 @@ class MVTService:
             except Exception as e:
                 logger.warning(f"Error generating shot_points MVT tile z={z},x={x},y={y}: {e}")
 
-        if "traces" in target_layers:
+        if "traces" in lod_layers:
             sql_traces = f"""
             WITH tile_env AS (
                 SELECT ST_TileEnvelope(:z, :x, :y) AS bbox

@@ -93,3 +93,14 @@ class BatchExportSegyResponse(BaseModel):
     results: list[ExportSegyResult] = Field(default_factory=list)
     total: int
 
+
+class BatchClipLinesRequest(BaseModel):
+    file_ids: list[int] = Field(..., min_length=1, description="List of SEG-Y file IDs to clip")
+    polygon_rings: list[list[list[float]]] = Field(..., min_length=1, description="Array of polygon rings [[[lon, lat], ...], ...]")
+
+
+class BatchClipLinesResponse(BaseModel):
+    inside: GeoJSONFeatureCollection
+    outside: GeoJSONFeatureCollection
+
+

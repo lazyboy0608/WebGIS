@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     minio_secure: bool = False
     minio_bucket_raw: str = "raw-segy"
     minio_bucket_processed: str = "processed-segy"
+    minio_bucket_avatars: str = "user-avatars"
     minio_presigned_expiry_seconds: int = 3600
 
     # Redis Cache (db 0 for Data Serving)
@@ -40,12 +41,18 @@ class Settings(BaseSettings):
     redis_blocks_ttl_seconds: int = 86400    # 24 hours for Seismic blocks GeoJSON
     redis_segy_ttl_seconds: int = 86400      # 24 hours for SEG-Y survey metadata/lines
 
+    # Default Admin Seed on Startup
+    default_admin_email: str = "admin@webgis.com"
+    default_admin_password: str = "Admin@123456"
+    default_admin_fullname: str = "System Administrator"
+    default_admin_phone: str = "0987654321"
+
 
     model_config = SettingsConfigDict(
-
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
 

@@ -12,6 +12,7 @@ import {
 } from '../../hooks/useWorkspacePersistence'
 import {
   exportSegySpatialFilter,
+  subscribeSegyProgressWebSocket,
   type ExportSegyResult,
 } from '../../api/seismicApi'
 import { blocksApi } from '../../api/blocksApi'
@@ -20,6 +21,19 @@ import type { GeoJSONFeatureCollection, SegyHeaderInspectionResult, SplitCommand
 export const DashboardPage: React.FC = () => {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+
+  const [showUserDropdown, setShowUserDropdown] = useState(false)
+  const userDropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(event.target as Node)) {
+        setShowUserDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleLogout = async () => {
     await logout()
@@ -65,6 +79,8 @@ export const DashboardPage: React.FC = () => {
   const [blockGeoJSON, setBlockGeoJSON] = useState<GeoJSONFeatureCollection | null>(null)
   const [showBlocks, setShowBlocks] = useState<boolean>(true)
   const [uploadingBlocks, setUploadingBlocks] = useState<boolean>(false)
+  const [blockProgressPercent, setBlockProgressPercent] = useState<number>(0)
+  const [blockProgressMessage, setBlockProgressMessage] = useState<string>('')
   const [blockError, setBlockError] = useState<string | null>(null)
   const [selectedBlockInfo, setSelectedBlockInfo] = useState<BlockClickInfo | null>(null)
   
@@ -341,14 +357,66 @@ export const DashboardPage: React.FC = () => {
     if (selectedFiles.length === 0) return
 
     setUploadingBlocks(true)
+    setBlockProgressPercent(10)
+    setBlockProgressMessage('Đang chuẩn bị nạp file Shapefile .zip...')
     setBlockError(null)
+
+    const clientId = `client_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`
+    const taskId = `block_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`
+    let isFinished = false
+
+    // 1. Subscribe to WebSocket updates
+    const wsUnsub = subscribeSegyProgressWebSocket(clientId, (msg) => {
+      if (msg.task_id === taskId) {
+        if (typeof msg.progress_percent === 'number') {
+          setBlockProgressPercent(msg.progress_percent)
+        }
+        if (msg.message) {
+          setBlockProgressMessage(msg.message)
+        }
+        if (msg.status === 'COMPLETED' || msg.status === 'FAILED') {
+          isFinished = true
+        }
+      }
+    })
+
+    // 2. Fallback polling every 500ms
+    const pollInterval = setInterval(async () => {
+      if (isFinished) return
+      try {
+        const taskData = await blocksApi.fetchBlockTaskStatus(taskId)
+        if (taskData) {
+          if (typeof taskData.progress_percent === 'number') {
+            setBlockProgressPercent(taskData.progress_percent)
+          }
+          if (taskData.message) {
+            setBlockProgressMessage(taskData.message)
+          }
+          if (taskData.status === 'COMPLETED' || taskData.status === 'FAILED') {
+            isFinished = true
+          }
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }, 500)
+
     try {
-      await blocksApi.uploadZip(selectedFiles[0])
+      await blocksApi.uploadZip(selectedFiles[0], taskId)
+      setBlockProgressPercent(100)
+      setBlockProgressMessage('Đã nạp thành công Lô địa chấn!')
       await fetchBlocks()
     } catch (err: any) {
       setBlockError(err?.message || 'Lỗi khi tải lên file Block')
     } finally {
-      setUploadingBlocks(false)
+      isFinished = true
+      clearInterval(pollInterval)
+      wsUnsub()
+      setTimeout(() => {
+        setUploadingBlocks(false)
+        setBlockProgressPercent(0)
+        setBlockProgressMessage('')
+      }, 600)
     }
   }
 
@@ -636,23 +704,67 @@ export const DashboardPage: React.FC = () => {
     <main className="shell">
       <header className="topbar">
         <div>
-          <span className="eyebrow">WEBGIS / DATA SERVING</span>
+          <span className="eyebrow">WEBGIS / DỊCH VỤ DỮ LIỆU</span>
           <h1>Seismic field atlas</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {user && (
-            <div className="user-profile-badge">
-              <span>
-                👤 <strong>{user.full_name}</strong>
-              </span>
-              <span className={`role-tag ${user.role}`}>{user.role}</span>
-              <button type="button" className="logout-btn" onClick={handleLogout}>
-                Đăng xuất
+            <div className="user-dropdown-container" ref={userDropdownRef}>
+              <button
+                type="button"
+                className={`user-dropdown-btn ${showUserDropdown ? 'active' : ''}`}
+                onClick={() => setShowUserDropdown((prev) => !prev)}
+                aria-expanded={showUserDropdown}
+              >
+                <div className="user-dropdown-avatar">
+                  {user.avatar_url ? (
+                    <img src={user.avatar_url} alt={user.full_name} className="avatar-img-sm" />
+                  ) : (
+                    <span>{user.full_name ? user.full_name[0].toUpperCase() : 'U'}</span>
+                  )}
+                </div>
+                <span className="user-dropdown-name">{user.full_name || user.email}</span>
+                <span className="user-dropdown-caret">{showUserDropdown ? '▲' : '▼'}</span>
               </button>
+
+              {showUserDropdown && (
+                <div className="user-dropdown-menu">
+                  <div className="user-dropdown-header">
+                    <div className="user-dropdown-header-name">{user.full_name}</div>
+                    <div className="user-dropdown-header-email">{user.email}</div>
+                    <span className={`role-tag ${user.role}`}>
+                      {user.role === 'admin' ? 'Quản trị viên' : 'Người dùng'}
+                    </span>
+                  </div>
+                  <div className="user-dropdown-divider" />
+                  <button
+                    type="button"
+                    className="user-dropdown-item"
+                    onClick={() => {
+                      setShowUserDropdown(false)
+                      navigate('/profile')
+                    }}
+                  >
+                    <span className="menu-icon">👤</span>
+                    <span>Thông tin cá nhân</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="user-dropdown-item logout-item"
+                    onClick={() => {
+                      setShowUserDropdown(false)
+                      handleLogout()
+                    }}
+                  >
+                    <span className="menu-icon">🚪</span>
+                    <span>Đăng xuất</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
           <span className="connection">
-            <i /> PostGIS connected
+            <i /> Đã kết nối PostGIS
           </span>
         </div>
       </header>
@@ -661,13 +773,13 @@ export const DashboardPage: React.FC = () => {
         <aside className="sidebar">
           {/* UPLOAD SECTION */}
           <label className="field-label" htmlFor="file-upload">
-            Upload SEG-Y files
+            Tải lên file SEG-Y
           </label>
           <label
             className={`upload-button${uploading ? ' is-uploading' : ''}`}
             htmlFor="file-upload"
           >
-            <span>{uploading ? 'Processing...' : 'Choose .sgy files'}</span>
+            <span>{uploading ? 'Đang xử lý...' : 'Chọn file .sgy'}</span>
             <b>+</b>
           </label>
           <input
@@ -679,7 +791,7 @@ export const DashboardPage: React.FC = () => {
             disabled={uploading}
             onChange={handleFileUpload}
           />
-          <small className="upload-hint">Files are sent to Backend 1 for processing.</small>
+          <small className="upload-hint">File được gửi đến máy chủ để xử lý.</small>
 
           {/* BLOCK UPLOAD BUTTON */}
           <label
@@ -687,7 +799,7 @@ export const DashboardPage: React.FC = () => {
             htmlFor="block-file-upload"
             style={{ marginTop: '8px' }}
           >
-            <span>{uploadingBlocks ? 'Processing block...' : 'Choose .zip block files'}</span>
+            <span>{uploadingBlocks ? 'Đang xử lý lô...' : 'Chọn file lô .zip'}</span>
             <b>+</b>
           </label>
           <input
@@ -703,7 +815,7 @@ export const DashboardPage: React.FC = () => {
 
           <div className="surveys-header">
             <label className="field-label" htmlFor="file-select">
-              Processed surveys
+              Khảo sát đã xử lý
             </label>
             {files.length > 0 && (
               <div className="surveys-actions">
@@ -738,8 +850,8 @@ export const DashboardPage: React.FC = () => {
             <>
               <div className="file-status">
                 <span style={{ background: '#e4572e' }} />
-                <strong>{selectedFiles.length} selected</strong>
-                <small>map EPSG:4326</small>
+                <strong>Đã chọn {selectedFiles.length}</strong>
+                <small>hệ tọa độ EPSG:4326</small>
               </div>
               <button
                 type="button"
@@ -766,7 +878,7 @@ export const DashboardPage: React.FC = () => {
           {/* PROCESSED BLOCK FILE SECTION */}
           <div className="surveys-header" style={{ marginTop: '12px' }}>
             <label className="field-label">
-              Processed block file
+              File lô đã xử lý
             </label>
           </div>
 
@@ -791,7 +903,7 @@ export const DashboardPage: React.FC = () => {
                     }}
                     title={`Xóa file ${bFile.name}`}
                   >
-                    <span>{deletingBlocks ? 'Đang xóa...' : 'Xóa block file'}</span>
+                    <span>{deletingBlocks ? 'Đang xóa...' : 'Xóa file lô'}</span>
                     <b>✕</b>
                   </button>
                 </div>
@@ -804,7 +916,7 @@ export const DashboardPage: React.FC = () => {
           )}
 
           <div className="rule" />
-          <p className="section-label">Spatial Filter</p>
+          <p className="section-label">Bộ lọc không gian</p>
 
           {!drawnPolygonRing ? (
             <button
@@ -861,7 +973,7 @@ export const DashboardPage: React.FC = () => {
                       className="saved-polygon-export"
                       disabled={exportingSegyId === poly.id}
                       onClick={() => handleExportPolygonSegy(poly)}
-                      title="Xuất các line xanh dương trong polygon này ra file SEG-Y (.sgy)"
+                      title="Xuất các tuyến địa chấn trong polygon ra file SEG-Y (.sgy)"
                     >
                       {exportingSegyId === poly.id ? '⏳' : '⤓ .sgy'}
                     </button>
@@ -947,14 +1059,14 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           <div className="rule" />
-          <p className="section-label">Map layers</p>
+          <p className="section-label">Các lớp bản đồ</p>
           <label className="toggle">
             <input
               type="checkbox"
               checked={showBlocks}
               onChange={(event) => setShowBlocks(event.target.checked)}
             />
-            <span>Seismic blocks</span>
+            <span>Lô địa chấn</span>
             <b>{activeBlockCount}</b>
           </label>
           <label className="toggle">
@@ -963,7 +1075,7 @@ export const DashboardPage: React.FC = () => {
               checked={showLines}
               onChange={(event) => setShowLines(event.target.checked)}
             />
-            <span>Seismic lines</span>
+            <span>Tuyến địa chấn</span>
             <b>{summary?.processed_line_count ?? 0}</b>
           </label>
           <label className="toggle">
@@ -972,7 +1084,7 @@ export const DashboardPage: React.FC = () => {
               checked={showPoints}
               onChange={(event) => setShowPoints(event.target.checked)}
             />
-            <span>Shot points</span>
+            <span>Điểm nổ</span>
             <b>{summary?.processed_shot_point_count ?? 0}</b>
           </label>
           <label className="toggle">
@@ -981,12 +1093,12 @@ export const DashboardPage: React.FC = () => {
               checked={showTraces}
               onChange={(event) => setShowTraces(event.target.checked)}
             />
-            <span>Trace positions</span>
+            <span>Vết địa chấn</span>
             <b>{summary?.processed_trace_count ?? 0}</b>
           </label>
 
           <div className="sidebar-footer">
-            <span>API endpoint</span>
+            <span>Cổng API</span>
             <code>localhost:8001</code>
           </div>
         </aside>
@@ -1132,21 +1244,21 @@ export const DashboardPage: React.FC = () => {
                   onClick={() => handleExportBlockExcel(selectedBlockInfo)}
                   disabled={isExportingExcel}
                 >
-                  {isExportingExcel ? '⏳ Đang xuất...' : '📊 Tải về dữ liệu block này'}
+                  {isExportingExcel ? '⏳ Đang xuất...' : '📊 Tải về dữ liệu lô này'}
                 </button>
                 <button
                   type="button"
                   className="btn-filter-block"
                   onClick={() => handleFilterByBlock(selectedBlockInfo)}
                 >
-                  🔍 Dùng làm bộ lọc (Filter)
+                  🔍 Dùng làm bộ lọc không gian
                 </button>
                 <button
                   type="button"
                   className="btn-split-block"
                   onClick={() => handleStartSplitBlock(selectedBlockInfo)}
                 >
-                  ✂️ Tách lô này (Split)
+                  ✂️ Phân tách lô này
                 </button>
               </div>
             </div>
@@ -1155,8 +1267,8 @@ export const DashboardPage: React.FC = () => {
           {selectedFileIds.length === 0 && activeBlockCount === 0 && (
             <div className="map-empty">
               <span>⌁</span>
-              <strong>Select surveys or upload blocks</strong>
-              <small>Processed geometry will appear here</small>
+              <strong>Chọn khảo sát hoặc tải lên file lô</strong>
+              <small>Dữ liệu hình học sau khi xử lý sẽ hiển thị tại đây</small>
             </div>
           )}
           {uploading && (
@@ -1179,7 +1291,27 @@ export const DashboardPage: React.FC = () => {
               </div>
             </div>
           )}
-          {loading && <div className="loading">Loading data...</div>}
+          {uploadingBlocks && (
+            <div className="upload-progress-overlay">
+              <div className="upload-progress-box">
+                <div className="upload-progress-header">
+                  <span className="upload-spinner" />
+                  <strong>Đang xử lý file Lô địa chấn (.zip)...</strong>
+                </div>
+                <div className="upload-progress-bar-container">
+                  <div
+                    className="upload-progress-bar-fill"
+                    style={{ width: `${Math.max(blockProgressPercent, 10)}%` }}
+                  />
+                </div>
+                <div className="upload-progress-status">
+                  <small>{blockProgressMessage || 'Đang nạp dữ liệu Shapefile lên server...'}</small>
+                  <span>{blockProgressPercent}%</span>
+                </div>
+              </div>
+            </div>
+          )}
+          {loading && <div className="loading">Đang tải dữ liệu...</div>}
           {error && <div className="error">{error}</div>}
           {exportError && <div className="error">{exportError}</div>}
 
@@ -1188,25 +1320,25 @@ export const DashboardPage: React.FC = () => {
             {drawnPolygonRing || activePolygonRings.length > 0 ? (
               <>
                 <span>
-                  <i className="line-key line-inside-key" /> Inside (Xanh)
+                  <i className="line-key line-inside-key" /> Bên trong (Xanh)
                 </span>
                 <span>
-                  <i className="line-key line-outside-key" /> Outside (Đỏ)
+                  <i className="line-key line-outside-key" /> Bên ngoài (Đỏ)
                 </span>
               </>
             ) : (
               <span>
-                <i className="line-key" /> Line
+                <i className="line-key" /> Tuyến địa chấn
               </span>
             )}
             <span>
-              <i className="point-key" /> Shot point
+              <i className="point-key" /> Điểm nổ
             </span>
             <span>
-              <i className="trace-key" /> Trace
+              <i className="trace-key" /> Vết địa chấn
             </span>
             <span>
-              <i className="block-key" /> Ranh giới Block
+              <i className="block-key" /> Ranh giới Lô
             </span>
           </div>
         </div>
@@ -1214,21 +1346,21 @@ export const DashboardPage: React.FC = () => {
 
       <footer className="summary">
         <div>
-          <span className="eyebrow">SELECTED DATASET</span>
-          <strong>{summary?.filename ?? 'No survey selected'}</strong>
+          <span className="eyebrow">TẬP DỮ LIỆU ĐÃ CHỌN</span>
+          <strong>{summary?.filename ?? 'Chưa chọn khảo sát nào'}</strong>
         </div>
         <div className="metrics">
           <span>
-            <b>{summary?.processed_line_count ?? 0}</b> lines
+            <b>{summary?.processed_line_count ?? 0}</b> tuyến
           </span>
           <span>
-            <b>{summary?.processed_shot_point_count ?? 0}</b> shot points
+            <b>{summary?.processed_shot_point_count ?? 0}</b> điểm nổ
           </span>
           <span>
-            <b>{summary?.processed_trace_count ?? 0}</b> traces
+            <b>{summary?.processed_trace_count ?? 0}</b> trace
           </span>
           <span>
-            <b>{activeBlockCount}</b> blocks
+            <b>{activeBlockCount}</b> lô
           </span>
         </div>
       </footer>
@@ -1403,7 +1535,7 @@ export const DashboardPage: React.FC = () => {
       {showDeleteBlockModal && deleteBlockTarget && (
         <div className="modal-backdrop" onClick={() => setShowDeleteBlockModal(false)}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <h3>Xóa Processed Block File</h3>
+            <h3>Xóa File Lô Đã Xử Lý</h3>
             <p>
               Bạn có chắc chắn muốn xóa dữ liệu Lô địa chấn từ file{' '}
               <strong>{deleteBlockTarget.name}</strong> ({deleteBlockTarget.count} Lô)?
@@ -1425,7 +1557,7 @@ export const DashboardPage: React.FC = () => {
                 disabled={deletingBlocks}
                 onClick={handleConfirmDeleteBlockFile}
               >
-                {deletingBlocks ? 'Đang xóa...' : 'Xóa block file'}
+                {deletingBlocks ? 'Đang xóa...' : 'Xóa file lô'}
               </button>
             </div>
           </div>

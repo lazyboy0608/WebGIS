@@ -5,20 +5,31 @@ import type {
   BlockUploadResponse,
   BlockSplitRequest,
   UndoSplitResponse,
+  SegyTaskStatusResponse,
 } from '../types/api'
 
 export const blocksApi = {
   /**
    * Upload shapefile .zip to Backend 1 (segy-processing-service :8000 via proxy /api/blocks/upload-zip)
    */
-  uploadZip: async (file: File): Promise<BlockUploadResponse> => {
+  uploadZip: async (file: File, taskId?: string): Promise<BlockUploadResponse> => {
     const formData = new FormData()
     formData.append('file', file)
+    if (taskId) {
+      formData.append('task_id', taskId)
+    }
 
     return apiClient<BlockUploadResponse>('/api/blocks/upload-zip', {
       method: 'POST',
       body: formData,
     })
+  },
+
+  /**
+   * Fetch async block processing task status
+   */
+  fetchBlockTaskStatus: async (taskId: string): Promise<SegyTaskStatusResponse> => {
+    return apiClient<SegyTaskStatusResponse>(`/api/blocks/tasks/${taskId}`)
   },
 
   /**

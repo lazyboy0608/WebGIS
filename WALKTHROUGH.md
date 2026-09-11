@@ -184,7 +184,12 @@ docker compose logs -f gateway
    ```
    *(Ví dụ: `http://192.168.1.100`)*
 2. **Kiểm tra các luồng nghiệp vụ:**
-   - Đăng nhập / Đăng ký tài khoản người dùng.
+   - Đăng nhập / Đăng ký tài khoản người dùng (`/login`).
+   - Đăng nhập tài khoản Quản trị viên (`/admin`) với tài khoản mặc định được tự động seed khi khởi động:
+     - **Email:** `admin@webgis.com`
+     - **Mật khẩu:** `Admin@123456`
+   - Quản trị viên theo dõi mức độ sử dụng CPU, RAM, Ổ đĩa máy chủ thời gian thực, quản lý danh sách người dùng, cấp quyền và đặt lại mật khẩu cho thành viên.
    - Upload file địa chấn `.segy` dung lượng lớn -> Thanh tiến trình WebSocket cập nhật realtime.
    - Bản đồ MapLibre hiển thị các đường khảo sát và mảnh Vector Tiles (MVT).
    - Upload Shapefile ranh giới lô, thử nghiệm cắt lô, hoàn tác và xuất báo cáo Excel.
+

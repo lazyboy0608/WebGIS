@@ -17,7 +17,7 @@ import { getCenter } from 'ol/extent'
 import VectorTileLayer from 'ol/layer/VectorTile'
 import VectorTileSource from 'ol/source/VectorTile'
 import MVT from 'ol/format/MVT'
-import { getSegyMvtTileUrlTemplate } from '../api/seismicApi'
+import { clipLinesBatch, getSegyMvtTileUrlTemplate } from '../api/seismicApi'
 import type { FileListItem, GeoJSONFeatureCollection, Geometry, LayerData } from '../types/api'
 import { clipLineStringByPolygon, isPointInPolygon } from '../utils/geoClipping'
 
@@ -182,7 +182,7 @@ function getLineDisplayName(
     return lineIdStr.replace(/\.(sgy|segy)$/i, '').replace(/\.[^/.]+$/, '')
   }
 
-  return 'Seismic Line'
+  return 'Tuyến địa chấn'
 }
 
 export function SeismicMap({
@@ -691,74 +691,110 @@ export function SeismicMap({
     const outsideSource = layerSet.outsideLines.getSource()
     const linesSource = layerSet.lines.getSource()
 
-    if (hasPolygon && showLines && data?.lines?.features && data.lines.features.length > 0) {
-      setTimeout(() => {
-        if (!layersRef.current) return
-        const inSrc = layersRef.current.insideLines.getSource()
-        const outSrc = layersRef.current.outsideLines.getSource()
-        inSrc?.clear()
-        outSrc?.clear()
+    let isCancelled = false
 
-        const insideFeatures: Feature[] = []
-        const outsideFeatures: Feature[] = []
+    if (hasPolygon && showLines) {
+      if (mvtFileIds && mvtFileIds.length > 0) {
+        clipLinesBatch(mvtFileIds, allActiveRings)
+          .then((res) => {
+            if (isCancelled || !layersRef.current) return
+            const inSrc = layersRef.current.insideLines.getSource()
+            const outSrc = layersRef.current.outsideLines.getSource()
+            inSrc?.clear()
+            outSrc?.clear()
 
-        for (const feature of data.lines.features) {
-          const geom = feature.geometry
-          if (!geom) continue
-
-          const lineCoordLists: [number, number][][] =
-            geom.type === 'LineString'
-              ? [(geom.coordinates as [number, number][]).map((pt) => fromLonLat(pt) as [number, number])]
-              : geom.type === 'MultiLineString'
-              ? (geom.coordinates as [number, number][][]).map((list) =>
-                  list.map((pt) => fromLonLat(pt) as [number, number])
-                )
-              : []
-
-          for (const coords of lineCoordLists) {
-            if (coords.length < 2) continue
-
-            let outsidePaths: [number, number][][] = [coords]
-            let insidePaths: [number, number][][] = []
-
-            for (const ring3857 of allActiveRings3857) {
-              const nextOutsidePaths: [number, number][][] = []
-              for (const path of outsidePaths) {
-                const { inside, outside } = clipLineStringByPolygon(path, ring3857)
-                insidePaths.push(...inside)
-                nextOutsidePaths.push(...outside)
-              }
-              outsidePaths = nextOutsidePaths
+            if (res.inside && res.inside.features.length > 0) {
+              const inFeats = format.readFeatures(res.inside, {
+                dataProjection: 'EPSG:4326',
+                featureProjection: 'EPSG:3857',
+              })
+              inSrc?.addFeatures(inFeats)
+            }
+            if (res.outside && res.outside.features.length > 0) {
+              const outFeats = format.readFeatures(res.outside, {
+                dataProjection: 'EPSG:4326',
+                featureProjection: 'EPSG:3857',
+              })
+              outSrc?.addFeatures(outFeats)
             }
 
-            for (const inPath of insidePaths) {
-              if (inPath.length >= 2) {
-                const lineGeom = new LineString(inPath)
-                const f = new Feature({ geometry: lineGeom })
-                if (feature.properties) f.setProperties(feature.properties)
-                insideFeatures.push(f)
-              }
-            }
+            layersRef.current.insideLines.setVisible(true)
+            layersRef.current.outsideLines.setVisible(true)
+            layersRef.current.lines.setVisible(false)
+            layersRef.current.mvt.setVisible(false)
+          })
+          .catch((err) => {
+            console.error('Failed to clip lines via PostGIS server:', err)
+          })
+      } else if (data?.lines?.features && data.lines.features.length > 0) {
+        setTimeout(() => {
+          if (isCancelled || !layersRef.current) return
+          const inSrc = layersRef.current.insideLines.getSource()
+          const outSrc = layersRef.current.outsideLines.getSource()
+          inSrc?.clear()
+          outSrc?.clear()
 
-            for (const outPath of outsidePaths) {
-              if (outPath.length >= 2) {
-                const lineGeom = new LineString(outPath)
-                const f = new Feature({ geometry: lineGeom })
-                if (feature.properties) f.setProperties(feature.properties)
-                outsideFeatures.push(f)
+          const insideFeatures: Feature[] = []
+          const outsideFeatures: Feature[] = []
+
+          for (const feature of data.lines.features) {
+            const geom = feature.geometry
+            if (!geom) continue
+
+            const lineCoordLists: [number, number][][] =
+              geom.type === 'LineString'
+                ? [(geom.coordinates as [number, number][]).map((pt) => fromLonLat(pt) as [number, number])]
+                : geom.type === 'MultiLineString'
+                ? (geom.coordinates as [number, number][][]).map((list) =>
+                    list.map((pt) => fromLonLat(pt) as [number, number])
+                  )
+                : []
+
+            for (const coords of lineCoordLists) {
+              if (coords.length < 2) continue
+
+              let outsidePaths: [number, number][][] = [coords]
+              let insidePaths: [number, number][][] = []
+
+              for (const ring3857 of allActiveRings3857) {
+                const nextOutsidePaths: [number, number][][] = []
+                for (const path of outsidePaths) {
+                  const { inside, outside } = clipLineStringByPolygon(path, ring3857)
+                  insidePaths.push(...inside)
+                  nextOutsidePaths.push(...outside)
+                }
+                outsidePaths = nextOutsidePaths
+              }
+
+              for (const inPath of insidePaths) {
+                if (inPath.length >= 2) {
+                  const lineGeom = new LineString(inPath)
+                  const f = new Feature({ geometry: lineGeom })
+                  if (feature.properties) f.setProperties(feature.properties)
+                  insideFeatures.push(f)
+                }
+              }
+
+              for (const outPath of outsidePaths) {
+                if (outPath.length >= 2) {
+                  const lineGeom = new LineString(outPath)
+                  const f = new Feature({ geometry: lineGeom })
+                  if (feature.properties) f.setProperties(feature.properties)
+                  outsideFeatures.push(f)
+                }
               }
             }
           }
-        }
 
-        inSrc?.addFeatures(insideFeatures)
-        outSrc?.addFeatures(outsideFeatures)
+          inSrc?.addFeatures(insideFeatures)
+          outSrc?.addFeatures(outsideFeatures)
 
-        layersRef.current.insideLines.setVisible(true)
-        layersRef.current.outsideLines.setVisible(true)
-        layersRef.current.lines.setVisible(false)
-        layersRef.current.mvt.setVisible(false)
-      }, 0)
+          layersRef.current.insideLines.setVisible(true)
+          layersRef.current.outsideLines.setVisible(true)
+          layersRef.current.lines.setVisible(false)
+          layersRef.current.mvt.setVisible(false)
+        }, 0)
+      }
     } else {
       insideSource?.clear()
       outsideSource?.clear()
@@ -850,7 +886,11 @@ export function SeismicMap({
         })
       }
     }
-  }, [data, blockData, showLines, showPoints, showTraces, showBlocks, drawnPolygonRing, savedPolygonRings])
+
+    return () => {
+      isCancelled = true
+    }
+  }, [data, blockData, showLines, showPoints, showTraces, showBlocks, drawnPolygonRing, savedPolygonRings, mvtFileIds])
 
   // Update MVT Vector Tile Source when mvtFileIds changes
   useEffect(() => {
@@ -941,20 +981,20 @@ export function SeismicMap({
           className="line-tooltip"
           style={{ left: hoveredLine.pixel[0] + 16, top: hoveredLine.pixel[1] + 16 }}
         >
-          <span className="tooltip-kicker">SEISMIC LINE</span>
+          <span className="tooltip-kicker">TUYẾN ĐỊA CHẤN</span>
           <strong>{getLineDisplayName(hoveredLine.properties, filesRef.current || [])}</strong>
           <div className="tooltip-grid">
             <span>
-              Longitude <b>{hoveredLine.coordinate[0].toFixed(6)}</b>
+              Kinh độ <b>{hoveredLine.coordinate[0].toFixed(6)}</b>
             </span>
             <span>
-              Latitude <b>{hoveredLine.coordinate[1].toFixed(6)}</b>
+              Vĩ độ <b>{hoveredLine.coordinate[1].toFixed(6)}</b>
             </span>
             <span>
-              Traces <b>{String(hoveredLine.properties.trace_count ?? hoveredLine.properties.point_count ?? 0)}</b>
+              Số trace <b>{String(hoveredLine.properties.trace_count ?? hoveredLine.properties.point_count ?? 0)}</b>
             </span>
             <span>
-              Shot points <b>{String(hoveredLine.properties.shot_point_count ?? hoveredLine.properties.point_count ?? 0)}</b>
+              Số điểm nổ <b>{String(hoveredLine.properties.shot_point_count ?? hoveredLine.properties.point_count ?? 0)}</b>
             </span>
           </div>
         </div>

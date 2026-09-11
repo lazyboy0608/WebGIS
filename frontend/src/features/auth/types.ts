@@ -6,7 +6,14 @@ export interface User {
   date_of_birth: string;
   role: 'user' | 'admin';
   is_active: boolean;
+  avatar_url?: string | null;
   created_at: string;
+}
+
+export interface UpdateProfilePayload {
+  full_name?: string;
+  phone_number?: string;
+  date_of_birth?: string;
 }
 
 /**

@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.api.schemas.processed_data import (
+    BatchClipLinesRequest,
+    BatchClipLinesResponse,
     BatchExportCsvResponse,
     BatchExportRequest,
     BatchExportSegyResponse,
@@ -309,4 +311,33 @@ def export_spatial_filter_segy(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to export SEG-Y polygon: {exc}",
         ) from exc
+
+
+@router.post("/lines/clip-batch", response_model=BatchClipLinesResponse)
+def clip_lines_batch(
+    body: BatchClipLinesRequest,
+    query_service: ProcessedDataQueryService = Depends(get_query_service),
+    current_user: UserModel = Depends(get_current_user),
+    _rl: None = Depends(user_rate_limit(settings.rate_limit_clip, settings.rate_limit_window_seconds)),
+) -> BatchClipLinesResponse:
+    """Clip multiple seismic lines by one or more polygon rings directly on PostGIS (Server-side Spatial Clipping)."""
+    user_id = _user_id_filter(current_user)
+    for file_id in body.file_ids:
+        ensure_file_accessible(file_id, query_service, user_id)
+
+    try:
+        payload = query_service.clip_lines_batch_postgis(
+            file_ids=body.file_ids,
+            polygon_rings=body.polygon_rings,
+        )
+        return BatchClipLinesResponse(
+            inside=GeoJSONFeatureCollection.model_validate(payload["inside"]),
+            outside=GeoJSONFeatureCollection.model_validate(payload["outside"]),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
 

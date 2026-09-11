@@ -75,15 +75,15 @@ export async function apiClient<T>(
       return apiClient<T>(url, options, true);
     } else {
       // Refresh thất bại → session hết hạn, redirect về /login
-      processQueue(new Error('Session expired'));
+      processQueue(new Error('Phiên đăng nhập đã hết hạn'));
       window.location.href = '/login';
-      throw new Error('Session expired. Vui lòng đăng nhập lại.');
+      throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
     }
   }
 
   // ── Xử lý lỗi HTTP khác ───────────────────────────────────────────────────
   if (!response.ok) {
-    let errorDetail = `Request failed (${response.status})`;
+    let errorDetail = `Yêu cầu thất bại (${response.status})`;
     try {
       const data = await response.json();
       if (data.detail) {

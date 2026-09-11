@@ -47,8 +47,9 @@ class WebSocketManager:
                     self.disconnect(client_id, connection)
 
     def _on_task_update(self, task: SegyTaskStatus) -> None:
+        task_type = "BLOCK_PROGRESS_UPDATE" if (task.task_id.startswith("block_") or task.filename.lower().endswith(".zip")) else "SEGY_PROGRESS_UPDATE"
         payload = {
-            "type": "SEGY_PROGRESS_UPDATE",
+            "type": task_type,
             "task_id": task.task_id,
             "filename": task.filename,
             "status": task.status,

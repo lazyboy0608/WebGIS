@@ -197,6 +197,28 @@ export async function exportSegySpatialFilter(
   return result.results;
 }
 
+export type BatchClipLinesResult = {
+  inside: GeoJSONFeatureCollection;
+  outside: GeoJSONFeatureCollection;
+};
+
+export async function clipLinesBatch(
+  fileIds: number[],
+  polygonRings: [number, number][][]
+): Promise<BatchClipLinesResult> {
+  return apiClient<BatchClipLinesResult>(
+    `${API_DATA_SERVING_URL}/api/segy-files/lines/clip-batch`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file_ids: fileIds,
+        polygon_rings: polygonRings,
+      }),
+    }
+  );
+}
+
 
 export type SegyProgressMessage = {
   type: string

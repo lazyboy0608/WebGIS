@@ -31,10 +31,17 @@ class UserResponse(BaseModel):
     date_of_birth: date
     role: str
     is_active: bool
+    avatar_url: Optional[str] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = Field(None, min_length=2, max_length=255, description="Họ và tên")
+    phone_number: Optional[str] = Field(None, min_length=8, max_length=50, description="Số điện thoại")
+    date_of_birth: Optional[date] = Field(None, description="Ngày sinh (YYYY-MM-DD)")
 
 
 class TokenResponse(BaseModel):

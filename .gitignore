@@ -39,6 +39,8 @@ yarn-error.log*
 # Large Data & Storage
 storage/
 tools/minio/minio.exe
+tools/redis/*.rdb
+*.rdb
 *.segy
 *.sgy
 *.zip

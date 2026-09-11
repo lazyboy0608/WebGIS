@@ -4,10 +4,8 @@ import {
   exportCsvBatch,
   fetchSegyFiles,
   fetchSegyLines,
-  fetchSegyShotPoints,
   fetchSegySummary,
   fetchSegyTaskStatus,
-  fetchSegyTraces,
   inspectSegyHeader,
   subscribeSegyProgressWebSocket,
   uploadSegyFiles as uploadSegyFilesApi,
@@ -260,30 +258,28 @@ export function useSeismicData(fileIds: number[]) {
     Promise.all(fileIds.map((fileId) => Promise.all([
       fetchSegySummary(fileId, controller.signal),
       fetchSegyLines(fileId, controller.signal),
-      fetchSegyShotPoints(fileId, controller.signal),
-      fetchSegyTraces(fileId, controller.signal),
     ])))
       .then((datasets) => {
-        const [firstSummary] = datasets;
-        const [nextSummary] = firstSummary;
+        const [firstDataset] = datasets;
+        const [nextSummary] = firstDataset;
         const aggregateSummary: ProcessedDataSummary = {
           ...nextSummary,
           id: fileIds[0],
-          filename: fileIds.length === 1 ? nextSummary.filename : `${fileIds.length} surveys selected`,
+          filename: fileIds.length === 1 ? nextSummary.filename : `Đã chọn ${fileIds.length} khảo sát`,
           trace_count: datasets.reduce((total, [s]) => total + s.trace_count, 0),
           line_count: datasets.reduce((total, [s]) => total + s.line_count, 0),
           processed_line_count: datasets.reduce((total, [s]) => total + s.processed_line_count, 0),
           processed_shot_point_count: datasets.reduce((total, [s]) => total + s.processed_shot_point_count, 0),
           processed_trace_count: datasets.reduce((total, [s]) => total + s.processed_trace_count, 0),
-          label: fileIds.length === 1 ? nextSummary.filename : `${fileIds.length} surveys selected`,
+          label: fileIds.length === 1 ? nextSummary.filename : `Đã chọn ${fileIds.length} khảo sát`,
           color: '#e4572e',
           status: 'ready',
         };
         setSummary(aggregateSummary);
         setLayers({
           lines: { type: 'FeatureCollection', features: datasets.flatMap(([, lines]) => (lines as GeoJSONFeatureCollection).features) },
-          shotPoints: { type: 'FeatureCollection', features: datasets.flatMap(([, , shotPoints]) => (shotPoints as GeoJSONFeatureCollection).features) },
-          traces: { type: 'FeatureCollection', features: datasets.flatMap(([, , , traces]) => (traces as GeoJSONFeatureCollection).features) },
+          shotPoints: { type: 'FeatureCollection', features: [] },
+          traces: { type: 'FeatureCollection', features: [] },
         });
       })
       .catch((reason: unknown) => {

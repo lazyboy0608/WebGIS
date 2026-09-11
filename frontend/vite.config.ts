@@ -32,6 +32,11 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/api/blocks/tasks': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+      },
       '/api/segy-files/ws': {
         target: 'ws://localhost:8000',
         ws: true,
