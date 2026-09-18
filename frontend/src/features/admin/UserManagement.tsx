@@ -106,6 +106,14 @@ export const UserManagement: React.FC = () => {
 
   useEffect(() => {
     loadUsers();
+    // Tự động làm mới danh sách và trạng thái Online mỗi 15 giây
+    const interval = setInterval(() => {
+      fetchAdminUsersApi()
+        .then((data) => setUsers(data))
+        .catch(() => {});
+    }, 15000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const showToast = (msg: string) => {
@@ -127,7 +135,9 @@ export const UserManagement: React.FC = () => {
       const matchStatus =
         statusFilter === 'all' ||
         (statusFilter === 'active' && u.is_active) ||
-        (statusFilter === 'inactive' && !u.is_active);
+        (statusFilter === 'inactive' && !u.is_active) ||
+        (statusFilter === 'online' && !!u.is_online) ||
+        (statusFilter === 'offline' && !u.is_online);
 
       return matchQuery && matchRole && matchStatus;
     });
@@ -350,6 +360,8 @@ export const UserManagement: React.FC = () => {
             <option value="all">Tất cả trạng thái</option>
             <option value="active">Đang hoạt động</option>
             <option value="inactive">Đã khóa</option>
+            <option value="online">Đang trực tuyến (Online)</option>
+            <option value="offline">Ngoại tuyến (Offline)</option>
           </select>
         </div>
       </div>
@@ -382,7 +394,7 @@ export const UserManagement: React.FC = () => {
                 <th>Email</th>
                 <th>Vai trò</th>
                 <th>Trạng thái</th>
-                <th>Khảo sát SEG-Y</th>
+                <th>Trực tuyến</th>
                 <th style={{ textAlign: 'right' }}>Thao tác</th>
               </tr>
             </thead>
@@ -403,6 +415,10 @@ export const UserManagement: React.FC = () => {
                           ) : (
                             <span>{initials}</span>
                           )}
+                          <span
+                            className={`avatar-online-dot ${u.is_online ? 'online' : 'offline'}`}
+                            title={u.is_online ? 'Đang online' : 'Ngoại tuyến (Offline)'}
+                          />
                         </div>
                         <div>
                           <strong className="table-user-name">{u.full_name}</strong>
@@ -426,7 +442,9 @@ export const UserManagement: React.FC = () => {
                       </span>
                     </td>
                     <td>
-                      <span className="badge-files">{u.segy_files_count} files</span>
+                      <span className={`online-badge ${u.is_online ? 'is-online' : 'is-offline'}`}>
+                        <span className="online-dot" /> {u.is_online ? 'Online' : 'Offline'}
+                      </span>
                     </td>
                     <td>
                       <div className="table-actions">

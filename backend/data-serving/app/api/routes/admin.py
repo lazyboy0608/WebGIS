@@ -94,10 +94,11 @@ def get_dashboard_stats(
             "inactive": total_users - active_users,
         }
 
-        # 5. Lấy chỉ số cache hit thực tế từ Redis Engine
+        # 5. Lấy chỉ số cache hit và người dùng online thực tế từ Redis Engine
         cache_stats = redis_cache.get_cache_stats()
         cache_hit_ratio = cache_stats["hit_ratio"]
-        active_sessions = max(active_users, 1)
+        online_user_ids = redis_cache.get_online_user_ids()
+        active_sessions = max(len(online_user_ids), 1)
 
         return AdminDashboardStats(
             total_users=total_users,
@@ -163,6 +164,7 @@ def get_admin_users(
     query = query.group_by(UserModel.id).order_by(UserModel.id.asc())
     results = query.all()
 
+    online_user_ids = redis_cache.get_online_user_ids()
     users_list = []
     for user_obj, files_count in results:
         user_item = AdminUserItem(
@@ -173,6 +175,7 @@ def get_admin_users(
             date_of_birth=user_obj.date_of_birth,
             role=user_obj.role,
             is_active=user_obj.is_active,
+            is_online=(user_obj.id in online_user_ids),
             avatar_url=user_obj.avatar_url,
             created_at=user_obj.created_at,
             segy_files_count=int(files_count or 0),

@@ -2453,6 +2453,77 @@ select { width: 100%; padding: 13px 10px; border: 1px solid #bfcac4; border-radi
   border-radius: 4px;
 }
 
+/* ── Online / Offline Status Badges ── */
+.online-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'DM Mono', monospace;
+  transition: all 0.2s ease;
+}
+
+.online-badge.is-online {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.online-badge.is-online .online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+  animation: pulseGreen 2s infinite;
+}
+
+.online-badge.is-offline {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.online-badge.is-offline .online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+@keyframes pulseGreen {
+  0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.6); }
+  70% { box-shadow: 0 0 0 5px rgba(22, 163, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+
+.table-avatar {
+  position: relative;
+  overflow: visible !important;
+}
+
+.avatar-online-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  z-index: 2;
+}
+
+.avatar-online-dot.online {
+  background: #16a34a;
+}
+
+.avatar-online-dot.offline {
+  background: #cbd5e1;
+}
+
 .table-actions {
   display: flex;
   align-items: center;

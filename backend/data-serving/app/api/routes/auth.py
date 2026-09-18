@@ -13,6 +13,7 @@ from app.core.rate_limiter import ip_rate_limit
 from app.database import get_db_session
 from app.infrastructure.storage.minio_client import minio_manager
 from app.models import UserModel
+from app.core.redis_client import redis_cache
 from app.services.security import (
     create_access_token,
     create_refresh_token,
@@ -155,6 +156,12 @@ def login(
     # Đặt cookie vào response
     _set_auth_cookies(response, access_token, refresh_token, remember_me=user_in.remember_me)
 
+    # Đánh dấu người dùng Online trong Redis
+    try:
+        redis_cache.set_user_online(user.id, ttl_seconds=90)
+    except Exception:
+        pass
+
     return TokenResponse(
         user=UserResponse.model_validate(user),
         message="Đăng nhập thành công",
@@ -231,7 +238,26 @@ def logout(
     db.commit()
 
     _clear_auth_cookies(response)
+
+    # Đánh dấu người dùng Offline ngay lập tức
+    try:
+        redis_cache.set_user_offline(current_user.id)
+    except Exception:
+        pass
+
     return {"message": "Đăng xuất thành công"}
+
+
+@router.post("/heartbeat", status_code=status.HTTP_200_OK)
+def heartbeat(
+    current_user: UserModel = Depends(get_current_user),
+):
+    """Heartbeat duy trì trạng thái Online thời gian thực."""
+    try:
+        redis_cache.set_user_online(current_user.id, ttl_seconds=90)
+    except Exception:
+        pass
+    return {"status": "ok", "user_id": current_user.id, "online": True}
 
 
 @router.get("/me", response_model=UserResponse)

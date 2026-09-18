@@ -32,6 +32,7 @@ export interface AdminUserItem {
   date_of_birth: string;
   role: 'user' | 'admin';
   is_active: boolean;
+  is_online?: boolean;
   avatar_url?: string | null;
   created_at: string;
   segy_files_count: number;

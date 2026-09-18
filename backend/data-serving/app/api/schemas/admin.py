@@ -50,6 +50,7 @@ class AdminUserItem(BaseModel):
     date_of_birth: date
     role: str
     is_active: bool
+    is_online: bool = False
     avatar_url: Optional[str] = None
     created_at: datetime
     segy_files_count: int = 0

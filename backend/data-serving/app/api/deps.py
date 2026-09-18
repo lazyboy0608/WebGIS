@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db_session
 from app.models import UserModel
 from app.services.security import decode_access_token
+from app.core.redis_client import redis_cache
 
 
 def get_current_user(
@@ -49,6 +50,12 @@ def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tài khoản này đã bị khóa",
         )
+
+    # Đánh dấu người dùng đang Online trong Redis (TTL 90s)
+    try:
+        redis_cache.set_user_online(user.id, ttl_seconds=90)
+    except Exception:
+        pass
 
     return user
 

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { getMeApi, loginApi, logoutApi, registerApi } from './authService';
+import { getMeApi, loginApi, logoutApi, registerApi, heartbeatApi } from './authService';
 import type { LoginPayload, RegisterPayload, User } from './types';
 
 interface AuthContextType {
@@ -34,6 +34,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     initAuth();
   }, []);
+
+  // Duy trì trạng thái Online thời gian thực định kỳ khi người dùng đang đăng nhập
+  useEffect(() => {
+    if (!user) return;
+
+    // Gửi ngay 1 heartbeat đầu tiên
+    heartbeatApi().catch(() => {});
+
+    // Định kỳ gửi heartbeat mỗi 30 giây để duy trì trạng thái Online trong Redis
+    const interval = setInterval(() => {
+      heartbeatApi().catch(() => {});
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [user]);
 
   const login = async (payload: LoginPayload): Promise<User> => {
     const res = await loginApi(payload);

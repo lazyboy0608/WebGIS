@@ -176,6 +176,55 @@ class RedisClient:
             logger.warning(f"Lỗi khi truy vấn thông số thống kê Redis: {exc}")
             return default_stats
 
+    def set_user_online(self, user_id: int, ttl_seconds: int = 90) -> None:
+        """Ghi nhận người dùng đang Online vào Redis với thời gian hết hạn TTL (mặc định 90s)."""
+        if not self._client or not settings.redis_cache_enabled:
+            return
+        try:
+            self._client.set(f"user:online:{user_id}", "1", ex=ttl_seconds)
+        except Exception as exc:
+            logger.debug(f"Redis set_user_online failed for {user_id}: {exc}")
+
+    def set_user_offline(self, user_id: int) -> None:
+        """Xóa trạng thái Online khi người dùng đăng xuất (Logout)."""
+        if not self._client or not settings.redis_cache_enabled:
+            return
+        try:
+            self._client.delete(f"user:online:{user_id}")
+        except Exception as exc:
+            logger.debug(f"Redis set_user_offline failed for {user_id}: {exc}")
+
+    def is_user_online(self, user_id: int) -> bool:
+        """Kiểm tra một người dùng có đang Online hay không."""
+        if not self._client or not settings.redis_cache_enabled:
+            return False
+        try:
+            return bool(self._client.exists(f"user:online:{user_id}"))
+        except Exception:
+            return False
+
+    def get_online_user_ids(self) -> set[int]:
+        """Lấy danh sách tất cả ID người dùng đang Online (quét nhanh qua pattern user:online:*)."""
+        if not self._client or not settings.redis_cache_enabled:
+            return set()
+        try:
+            online_ids: set[int] = set()
+            cursor = 0
+            while True:
+                cursor, keys = self._client.scan(cursor=cursor, match="user:online:*", count=100)
+                for k in keys:
+                    key_str = k.decode("utf-8") if isinstance(k, bytes) else str(k)
+                    parts = key_str.split(":")
+                    if len(parts) >= 3 and parts[2].isdigit():
+                        online_ids.add(int(parts[2]))
+                if cursor == 0:
+                    break
+            return online_ids
+        except Exception as exc:
+            logger.debug(f"Redis get_online_user_ids failed: {exc}")
+            return set()
+
 
 # Global singleton instance
 redis_cache = RedisClient()
+

@@ -61,6 +61,15 @@ export async function logoutApi(): Promise<void> {
   });
 }
 
+/**
+ * Heartbeat API — gửi tín hiệu lên server định kỳ để duy trì trạng thái Online.
+ */
+export async function heartbeatApi(): Promise<{ status: string; online: boolean }> {
+  return apiClient<{ status: string; online: boolean }>(`${AUTH_BASE}/heartbeat`, {
+    method: 'POST',
+  }, false, true);
+}
+
 // Giữ backward compat cho seismicApi và các file khác import từ client
 export { API_DATA_SERVING_URL };
 
