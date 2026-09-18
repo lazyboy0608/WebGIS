@@ -48,10 +48,15 @@ export const RegisterPage: React.FC = () => {
       return;
     }
 
-    if (formData.password.length < 6) {
-      setPopup({ type: 'error', message: 'Mật khẩu phải có ít nhất 6 ký tự.' });
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=\[\]{};':"\\|,.<>\/?~`])[A-Za-z\d@$!%*?&#^()_+\-=\[\]{};':"\\|,.<>\/?~`]{8,}$/;
+    if (!passwordRegex.test(formData.password)) {
+      setPopup({
+        type: 'error',
+        message: 'Mật khẩu phải có ít nhất 8 ký tự, gồm chữ hoa, chữ thường, chữ số và ký tự đặc biệt (ví dụ @, $, !, %, *, ?...).',
+      });
       return;
     }
+
 
     try {
       setSubmitting(true);

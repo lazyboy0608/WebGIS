@@ -40,6 +40,11 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column(
+            "basin_name",
+            sa.String(length=255),
+            nullable=True,
+        ),
+        sa.Column(
             "area_km2",
             sa.Float(),
             nullable=True,

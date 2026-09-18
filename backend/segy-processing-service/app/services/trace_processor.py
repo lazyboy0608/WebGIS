@@ -49,7 +49,7 @@ class TraceProcessor:
         if units is None:
             units = 1
 
-        scalar = getattr(header, "coordinate_scalar", 1)
+        scalar = getattr(header, "effective_coordinate_scalar", getattr(header, "coordinate_scalar", 1))
         if scalar is None:
             scalar = 1
 

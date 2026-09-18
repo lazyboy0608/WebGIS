@@ -24,8 +24,12 @@ class SegyFileService:
     def get_file(self, file_id: int) -> SegyFile | None:
         return self.repository.get_by_id(file_id)
 
-    def get_file_by_filename(self, filename: str) -> SegyFile | None:
-        return self.repository.get_by_filename(filename)
+    def get_file_by_filename(
+        self,
+        filename: str,
+        user_id: int | None = None,
+    ) -> SegyFile | None:
+        return self.repository.get_by_filename(filename, user_id=user_id)
 
     def list_files(self) -> list[SegyFile]:
         return self.repository.list_all()

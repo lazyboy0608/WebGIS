@@ -14,6 +14,10 @@ export interface AdminDashboardStats {
   disk_total_gb: number;
   active_sessions: number;
   cache_hit_ratio: number;
+  cache_keyspace_hits?: number;
+  cache_keyspace_misses?: number;
+  cache_total_keys?: number;
+  cache_used_memory?: string;
   database_status: string;
   user_growth: Array<{ date: string; count: number }>;
   role_distribution: Record<string, number>;

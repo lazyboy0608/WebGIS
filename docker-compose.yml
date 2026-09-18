@@ -1,6 +1,6 @@
 services:
   # ============================================================
-  # 1. Nginx Single Web Gateway (Port 80 Mở ra Mạng LAN)
+  # 1. Nginx Single Web Gateway (Port 80 HTTP & Port 443 HTTPS Mở ra Mạng LAN)
   # ============================================================
   gateway:
     build:
@@ -10,11 +10,15 @@ services:
     restart: always
     ports:
       - "${WEB_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
     depends_on:
       - segy-processing
       - data-serving
     networks:
       - webgis-network
+
 
   # ============================================================
   # 2. Redis Cache & Pub/Sub Engine (Nội bộ Docker)
@@ -63,7 +67,7 @@ services:
   # 4. MinIO S3 Object Storage (Nội bộ Docker)
   # ============================================================
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: webgis-minio
     restart: always
     command: server /data --console-address ":9001"

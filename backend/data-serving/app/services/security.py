@@ -36,10 +36,15 @@ def create_access_token(
     return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(subject: str | Any) -> str:
+def create_refresh_token(subject: str | Any, remember_me: bool = False) -> str:
     """Create long-lived JWT refresh token signed with refresh secret key."""
     expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
-    to_encode = {"sub": str(subject), "exp": expire, "type": "refresh"}
+    to_encode = {
+        "sub": str(subject),
+        "exp": expire,
+        "type": "refresh",
+        "remember_me": bool(remember_me),
+    }
     return jwt.encode(to_encode, settings.refresh_secret_key, algorithm=settings.jwt_algorithm)
 
 

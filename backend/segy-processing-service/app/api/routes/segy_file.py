@@ -53,6 +53,7 @@ from app.services.shot_point_analyzer import ShotPointAnalyzer
 from app.services.trace_processor import TraceProcessor
 from app.services.wgs84_line_geometry_builder import WGS84LineGeometryBuilder
 from pyproj import CRS
+import segyio
 from app.api.schemas.segy_file import (
     CrsPresetResponse,
     ProcessedPointResponse,
@@ -62,7 +63,9 @@ from app.api.schemas.segy_file import (
     SegyFileResponse,
     SegyFileUpdate,
     SegyHeaderInspectionResponse,
+    SegyParsedHeaderDetails,
     SegyProcessingResponse,
+    SegySampleTrace,
     SegyTaskStatusResponse,
     SegyUploadBatchResponse,
 )
@@ -81,6 +84,7 @@ from app.services.segy_file_service import SegyFileService
 from app.services.segy_reader import SegyReaderService
 from app.services.source_crs_extractor import (
     extract_source_crs,
+    parse_segy_textual_header,
     validate_and_heal_source_crs,
 )
 from app.services.segy_validator import SegyValidator
@@ -387,9 +391,71 @@ async def inspect_segy_header(
             pass
 
         preview = None
+        header_details = None
         if metadata.textual_header and metadata.textual_header.raw_text:
             lines = [l.strip() for l in metadata.textual_header.raw_text.splitlines() if l.strip()]
-            preview = "\n".join(lines[:8])
+            preview = "\n".join(lines[:12])
+            parsed_dict = parse_segy_textual_header(metadata.textual_header.raw_text)
+            if parsed_dict:
+                header_details = SegyParsedHeaderDetails(
+                    survey=parsed_dict.get("survey"),
+                    line_id=parsed_dict.get("line_id"),
+                    client=parsed_dict.get("client"),
+                    contractor=parsed_dict.get("contractor"),
+                    datum=parsed_dict.get("datum"),
+                    ellipsoid=parsed_dict.get("ellipsoid"),
+                    projection=parsed_dict.get("projection"),
+                    zone=parsed_dict.get("zone"),
+                    scale_factor=parsed_dict.get("scale_factor"),
+                    central_meridian=parsed_dict.get("central_meridian"),
+                    false_easting=parsed_dict.get("false_easting"),
+                    false_northing=parsed_dict.get("false_northing"),
+                    units=parsed_dict.get("units"),
+                )
+
+        # Trích xuất dữ liệu sơ bộ của các trace đầu (tối đa 10 trace)
+        sample_traces: list[SegySampleTrace] = []
+        try:
+            with segyio.open(str(resolved_local_path), "r", ignore_geometry=True) as segy_f:
+                num_to_read = min(segy_f.tracecount, 10)
+                for idx in range(num_to_read):
+                    hdr = segy_f.header[idx]
+                    sac = int(hdr[segyio.TraceField.SourceGroupScalar]) if segyio.TraceField.SourceGroupScalar in hdr else None
+                    saed = int(hdr[segyio.TraceField.ElevationScalar]) if segyio.TraceField.ElevationScalar in hdr else None
+
+                    # Ưu tiên SAC, fallback sang SAED nếu SAC bằng 0 hoặc 1
+                    eff_scalar = sac if (sac is not None and sac not in (0, 1)) else (saed if (saed is not None and saed not in (0, 1)) else 1)
+                    mult = 1.0 / abs(eff_scalar) if eff_scalar < 0 else (float(eff_scalar) if eff_scalar > 0 else 1.0)
+
+                    src_x = float(hdr[segyio.TraceField.SourceX]) if segyio.TraceField.SourceX in hdr else None
+                    src_y = float(hdr[segyio.TraceField.SourceY]) if segyio.TraceField.SourceY in hdr else None
+                    cdp_x = float(hdr[segyio.TraceField.CDP_X]) if segyio.TraceField.CDP_X in hdr else None
+                    cdp_y = float(hdr[segyio.TraceField.CDP_Y]) if segyio.TraceField.CDP_Y in hdr else None
+                    seq_line = int(hdr[segyio.TraceField.TRACE_SEQUENCE_LINE]) if segyio.TraceField.TRACE_SEQUENCE_LINE in hdr else None
+
+                    raw_x = src_x if (src_x and src_x != 0) else (cdp_x if cdp_x else 0.0)
+                    raw_y = src_y if (src_y and src_y != 0) else (cdp_y if cdp_y else 0.0)
+
+                    scaled_x = round(raw_x * mult, 2) if raw_x != 0 else 0.0
+                    scaled_y = round(raw_y * mult, 2) if raw_y != 0 else 0.0
+
+                    sample_traces.append(
+                        SegySampleTrace(
+                            trace_index=idx + 1,
+                            trace_sequence_line=seq_line,
+                            sac=sac,
+                            saed=saed,
+                            effective_scalar=eff_scalar,
+                            source_x=src_x,
+                            source_y=src_y,
+                            cdp_x=cdp_x,
+                            cdp_y=cdp_y,
+                            scaled_x=scaled_x,
+                            scaled_y=scaled_y,
+                        )
+                    )
+        except Exception:
+            pass
 
         return SegyHeaderInspectionResponse(
             filename=filename,
@@ -399,6 +465,8 @@ async def inspect_segy_header(
             default_target_crs_name="WGS 84 (Kinh độ / Vĩ độ - EPSG:4326)",
             trace_count=metadata.trace_count,
             textual_header_preview=preview,
+            header_details=header_details,
+            sample_traces=sample_traces,
         )
     except Exception as exc:
         raise HTTPException(
@@ -443,7 +511,7 @@ async def _upload_and_process(
         message=f"Starting streaming upload for {filename}...",
     )
 
-    existing = service.get_file_by_filename(filename)
+    existing = service.get_file_by_filename(filename, user_id=user_id)
     if existing is not None and existing.id is not None:
         summary = query_service.summary(existing.id)
         if summary is not None and (
@@ -581,7 +649,7 @@ async def _upload_async_fast(
         )
 
     filename = Path(file.filename).name
-    existing = service.get_file_by_filename(filename)
+    existing = service.get_file_by_filename(filename, user_id=user_id)
     if existing is not None and existing.id is not None:
         summary = query_service.summary(existing.id)
         if summary is not None and (
@@ -653,7 +721,7 @@ async def upload_and_process_segy_file(
     file: UploadFile = File(...),
     source_crs: str | None = Form(None),
     target_crs: str | None = Form(None),
-    current_user_id: int | None = Depends(get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     service: SegyFileService = Depends(get_segy_file_service),
     query_service: ProcessedDataQueryService = Depends(
         get_processed_data_query_service,
@@ -699,8 +767,9 @@ async def upload_and_process_segy_files(
     files: list[UploadFile] = File(...),
     source_crs: str | None = Form(None),
     target_crs: str | None = Form(None),
-    current_user_id: int | None = Depends(get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     service: SegyFileService = Depends(get_segy_file_service),
+
     query_service: ProcessedDataQueryService = Depends(
         get_processed_data_query_service,
     ),
@@ -823,8 +892,9 @@ def get_segy_file(
 def get_segy_file_by_filename(
     filename: str,
     service: SegyFileService = Depends(get_segy_file_service),
+    current_user_id: int | None = Depends(get_current_user_id),
 ) -> SegyFileResponse:
-    segy_file = service.get_file_by_filename(filename)
+    segy_file = service.get_file_by_filename(filename, user_id=current_user_id)
 
     if segy_file is None:
         raise HTTPException(

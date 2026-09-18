@@ -19,8 +19,12 @@ class SegyFileRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_by_filename(self, filename: str) -> Optional[SegyFile]:
-        """Get a SEG-Y file by filename."""
+    def get_by_filename(
+        self,
+        filename: str,
+        user_id: int | None = None,
+    ) -> Optional[SegyFile]:
+        """Get a SEG-Y file by filename and optional user_id."""
         raise NotImplementedError
 
     @abstractmethod

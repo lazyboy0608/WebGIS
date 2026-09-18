@@ -111,15 +111,47 @@ export type SegyTaskStatusResponse = {
   updated_at?: string
 }
 
+export type SegyParsedHeaderDetails = {
+  survey?: string | null;
+  line_id?: string | null;
+  client?: string | null;
+  contractor?: string | null;
+  datum?: string | null;
+  ellipsoid?: string | null;
+  projection?: string | null;
+  zone?: number | null;
+  scale_factor?: number | null;
+  central_meridian?: string | null;
+  false_easting?: number | null;
+  false_northing?: number | null;
+  units?: string | null;
+};
+
+export type SegySampleTrace = {
+  trace_index: number;
+  trace_sequence_line?: number | null;
+  sac?: number | null;
+  saed?: number | null;
+  effective_scalar: number;
+  source_x?: number | null;
+  source_y?: number | null;
+  cdp_x?: number | null;
+  cdp_y?: number | null;
+  scaled_x?: number | null;
+  scaled_y?: number | null;
+};
+
 export type SegyHeaderInspectionResult = {
-  filename: string
-  source_crs: string
-  source_crs_name: string
-  default_target_crs: string
-  default_target_crs_name: string
-  trace_count: number
-  textual_header_preview?: string | null
-}
+  filename: string;
+  source_crs: string;
+  source_crs_name: string;
+  default_target_crs: string;
+  default_target_crs_name: string;
+  trace_count: number;
+  textual_header_preview?: string | null;
+  header_details?: SegyParsedHeaderDetails | null;
+  sample_traces?: SegySampleTrace[] | null;
+};
 
 export type CrsPreset = {
   code: string

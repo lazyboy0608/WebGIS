@@ -1097,10 +1097,6 @@ export const DashboardPage: React.FC = () => {
             <b>{summary?.processed_trace_count ?? 0}</b>
           </label>
 
-          <div className="sidebar-footer">
-            <span>Cổng API</span>
-            <code>localhost:8001</code>
-          </div>
         </aside>
 
         <div className="map-panel">

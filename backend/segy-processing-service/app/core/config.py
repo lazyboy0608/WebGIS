@@ -31,4 +31,8 @@ class Settings:
     REDIS_ENABLED: bool = os.getenv("REDIS_ENABLED", "true").lower() in ("true", "1", "yes")
     REDIS_TASK_TTL_SECONDS: int = int(os.getenv("REDIS_TASK_TTL_SECONDS", "3600"))
 
+    # Security & JWT Authentication
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "webgis-production-secret-key-lan-2026-super-secure")
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+
 settings = Settings()

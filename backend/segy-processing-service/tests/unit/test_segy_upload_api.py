@@ -36,7 +36,7 @@ class FakeSegyFileService:
             geometry=segy_file.geometry,
         )
 
-    def get_file_by_filename(self, filename: str) -> SegyFile | None:
+    def get_file_by_filename(self, filename: str, user_id: int | None = None) -> SegyFile | None:
         if self.existing is None:
             return None
         return self.existing if self.existing.filename == filename else None

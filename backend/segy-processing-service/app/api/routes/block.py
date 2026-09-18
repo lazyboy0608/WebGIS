@@ -23,8 +23,9 @@ async def upload_block_zip(
     file: UploadFile = File(...),
     task_id: str | None = Form(None),
     db: Session = Depends(get_db_session),
-    current_user_id: int | None = Depends(get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
 ):
+
     if not file.filename.lower().endswith(".zip"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

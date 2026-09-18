@@ -10,6 +10,7 @@ export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   const [popup, setPopup] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -25,16 +26,20 @@ export const LoginPage: React.FC = () => {
 
     try {
       setSubmitting(true);
-      // Gọi login() từ AuthContext — nó gọi API và cập nhật user state trong context
-      await login({ email: email.trim(), password });
+      // Gọi login() từ AuthContext — gửi kèm remember_me
+      const loggedInUser = await login({
+        email: email.trim(),
+        password,
+        remember_me: rememberMe,
+      });
 
-      // Hiển thị popup thành công rồi chuyển hướng
+      // Hiển thị popup thành công rồi chuyển hướng đúng theo role
       setPopup({ type: 'success', message: 'Đăng nhập thành công!' });
 
-      // Delay 1.5s để user thấy popup xanh trước khi navigate
+      const targetRoute = loggedInUser.role === 'admin' ? '/admin' : '/dashboard';
       setTimeout(() => {
-        navigate('/dashboard', { replace: true });
-      }, 1500);
+        navigate(targetRoute, { replace: true });
+      }, 1200);
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Đăng nhập thất bại!';
       setPopup({ type: 'error', message: errorMsg });
@@ -86,6 +91,20 @@ export const LoginPage: React.FC = () => {
               {showPassword ? 'Ẩn' : 'Hiện'}
             </button>
           </div>
+        </div>
+
+        <div className="auth-remember-row">
+          <label className="auth-checkbox-label" htmlFor="login-remember-me">
+            <input
+              id="login-remember-me"
+              type="checkbox"
+              className="auth-checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+            />
+            <span className="auth-checkbox-custom" />
+            <span className="auth-checkbox-text">Ghi nhớ đăng nhập</span>
+          </label>
         </div>
 
         <button type="submit" className="auth-submit-btn" disabled={submitting}>

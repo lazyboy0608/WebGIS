@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     # Refresh token — dài hạn (7 ngày), dùng secret key riêng
     refresh_secret_key: str = "webgis_refresh_secret_key_2026_do_not_share"
     refresh_token_expire_days: int = 7
+    cookie_secure: bool = False  # Bật True khi chạy môi trường HTTPS production
+
 
     # Rate limiting — sliding window (in-memory, Phase 1)
     # Override via environment variables, e.g. RATE_LIMIT_LOGIN=5

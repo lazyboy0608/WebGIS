@@ -22,6 +22,7 @@ from app.models import (
     UserModel,
 )
 from app.services.security import get_password_hash
+from app.core.redis_client import redis_cache
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +94,9 @@ def get_dashboard_stats(
             "inactive": total_users - active_users,
         }
 
-        # 5. Ước tính chỉ số cache hit từ Redis
-        cache_hit_ratio = 94.8
+        # 5. Lấy chỉ số cache hit thực tế từ Redis Engine
+        cache_stats = redis_cache.get_cache_stats()
+        cache_hit_ratio = cache_stats["hit_ratio"]
         active_sessions = max(active_users, 1)
 
         return AdminDashboardStats(
@@ -111,6 +113,10 @@ def get_dashboard_stats(
             disk_total_gb=disk_total_gb,
             active_sessions=active_sessions,
             cache_hit_ratio=cache_hit_ratio,
+            cache_keyspace_hits=cache_stats["keyspace_hits"],
+            cache_keyspace_misses=cache_stats["keyspace_misses"],
+            cache_total_keys=cache_stats["total_keys"],
+            cache_used_memory=cache_stats["used_memory_human"],
             database_status="Đang hoạt động (Connected)",
             user_growth=user_growth,
             role_distribution=role_dist,

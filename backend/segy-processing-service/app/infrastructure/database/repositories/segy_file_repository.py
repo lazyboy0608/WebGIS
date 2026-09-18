@@ -51,9 +51,12 @@ class SQLAlchemySegyFileRepository(SegyFileRepository):
     def get_by_filename(
         self,
         filename: str,
+        user_id: int | None = None,
     ) -> Optional[SegyFile]:
 
         stmt = select(SegyFileModel).where(SegyFileModel.filename == filename)
+        if user_id is not None:
+            stmt = stmt.where(SegyFileModel.user_id == user_id)
 
         model = self.session.scalar(stmt)
 

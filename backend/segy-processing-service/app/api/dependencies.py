@@ -12,26 +12,39 @@ security_scheme = HTTPBearer(auto_error=False)
 def get_current_user_id(
     credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
     access_token: str | None = Cookie(default=None),
-) -> int | None:
+) -> int:
     """
-    Extract authenticated user_id from request.
+    Extract and enforce authenticated user_id from request.
 
     Tries in order:
       1. Authorization: Bearer <token>  (API clients, Swagger UI)
       2. access_token cookie            (browser frontend — credentials:'include')
 
-    Returns None if no valid token is found (unauthenticated upload is allowed).
+    Raises HTTP 401 if no valid authentication is present.
     """
     token: str | None = credentials.credentials if credentials else access_token
     if not token:
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Yêu cầu xác thực tài khoản trước khi thực hiện thao tác (Token missing)",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     payload = decode_access_token(token)
     if not payload or "sub" not in payload:
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token không hợp lệ hoặc đã hết hạn",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     try:
         return int(payload["sub"])
     except (ValueError, TypeError):
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token chứa thông tin user không hợp lệ",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
 
 from app.application.services.processing_persistence import (
     ProcessingResultPersistenceService,

@@ -102,6 +102,38 @@ class SegyTaskStatusResponse(BaseModel):
     updated_at: str | None = None
 
 
+class SegyParsedHeaderDetails(BaseModel):
+    """Structured details parsed from SEG-Y textual header."""
+    survey: str | None = None
+    line_id: str | None = None
+    client: str | None = None
+    contractor: str | None = None
+    datum: str | None = None
+    ellipsoid: str | None = None
+    projection: str | None = None
+    zone: int | None = None
+    scale_factor: float | None = None
+    central_meridian: str | None = None
+    false_easting: float | None = None
+    false_northing: float | None = None
+    units: str | None = None
+
+
+class SegySampleTrace(BaseModel):
+    """Initial trace inspection data showing SAC, SAED and coordinates."""
+    trace_index: int
+    trace_sequence_line: int | None = None
+    sac: int | None = None
+    saed: int | None = None
+    effective_scalar: int = 1
+    source_x: float | None = None
+    source_y: float | None = None
+    cdp_x: float | None = None
+    cdp_y: float | None = None
+    scaled_x: float | None = None
+    scaled_y: float | None = None
+
+
 class SegyHeaderInspectionResponse(BaseModel):
     """Result of pre-inspecting SEG-Y textual/binary headers."""
 
@@ -112,6 +144,8 @@ class SegyHeaderInspectionResponse(BaseModel):
     default_target_crs_name: str = "WGS 84 (Kinh độ / Vĩ độ - EPSG:4326)"
     trace_count: int = 0
     textual_header_preview: str | None = None
+    header_details: SegyParsedHeaderDetails | None = None
+    sample_traces: list[SegySampleTrace] | None = None
 
 
 class CrsPresetResponse(BaseModel):

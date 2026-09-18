@@ -23,15 +23,17 @@ WebGIS/
 ├── backend/
 │   ├── segy-processing-service/
 │   │   ├── .dockerignore           # Bỏ qua .venv, storage, data, pycache
-│   │   └── Dockerfile              # Multi-stage build Python + GDAL/GEOS C-extensions
+│   │   └── Dockerfile              # Multi-stage build Python + GDAL/GEOS C-extensions + non-root appuser
 │   └── data-serving/
 │       ├── .dockerignore           # Bỏ qua .venv, pycache, tests
-│       └── Dockerfile              # Multi-stage build Python + GeoAlchemy
+│       └── Dockerfile              # Multi-stage build Python + GeoAlchemy + non-root appuser
 └── scripts/
-    ├── deploy_docker.sh / .bat     # Script triển khai thủ công
-    ├── stop_docker.sh / .bat       # Script dừng hệ thống
+    ├── deploy_docker.sh / .bat     # Script triển khai tự động/thủ công
+    ├── stop_docker.sh / .bat       # Script dừng hệ thống an toàn
+    ├── check_status.sh / .bat      # Script kiểm tra trạng thái 6 container & tài nguyên CPU/RAM
     ├── backup_database.sh / .bat   # Script tự động sao lưu PostGIS database
     └── restore_database.sh / .bat  # Script khôi phục PostGIS database
+
 ```
 
 ---
@@ -176,20 +178,90 @@ docker compose logs -f gateway
 
 ---
 
-## V. KIỂM THỬ TRUY CẬP TỪ MẠNG NỘI BỘ (LAN)
+## V. KIỂM THỬ TRUY CẬP TỪ MẠNG NỘI BỘ (LAN) & CẤU HÌNH HTTPS
 
-1. Từ bất kỳ máy tính/laptop nào trong mạng LAN, mở trình duyệt và gõ:
+Hệ thống đã được thiết lập hoàn chỉnh giải pháp **HTTPS nội bộ với CA riêng (Internal Certificate Authority)** và **Tên miền cục bộ (`seismicatlas.local`)**. Giải pháp này đảm bảo:
+1. **Bảo mật tuyệt đối (100% Free - Không tốn chi phí mua chứng chỉ)**: Dữ liệu tọa độ mỏ, dữ liệu địa chấn SEG-Y, mật khẩu và JWT token được mã hóa an toàn qua TLS 1.3/1.2 trên toàn mạng LAN văn phòng.
+2. **Khóa xanh uy tín (Green Padlock - Trusted Connection)**: Trình duyệt Chrome, Edge, Cốc Cốc trên máy tính nhân viên sẽ hiện biểu tượng khóa bảo mật xanh mà không có bất kỳ cảnh báo đỏ nào.
+3. **Chuyển hướng tự động (HTTP 301 $\rightarrow$ HTTPS)**: Truy cập `http://seismicatlas.local` hoặc IP máy chủ sẽ tự động chuyển sang `https://seismicatlas.local`.
+
+---
+
+## 1. Tóm tắt các thành phần đã triển khai
+
+| Thành phần | Đường dẫn / Cấu hình | Chi tiết |
+| :--- | :--- | :--- |
+| **Thư mục Chứng chỉ** | `d:\WebGIS\certs\` | Chứa `rootCA.crt`, `rootCA.key`, `seismicatlas.crt`, `seismicatlas.key` (hạn dùng 10 năm cho CA, 3 năm cho SSL). |
+| **Công cụ sinh SSL** | `d:\WebGIS\scripts\generate_ssl_certs.py` | Tự động sinh Root CA và Server Certificate với Subject Alternative Names (SAN) bao gồm `seismicatlas.local`, `*.seismicatlas.local`, `localhost`, `127.0.0.1` và tất cả IP mạng LAN máy chủ. |
+| **Cài đặt Root CA 1-Click** | `d:\WebGIS\scripts\install_root_ca.bat` (Win)<br>`d:\WebGIS\scripts\install_root_ca.sh` (Linux) | Tự động thêm Root CA vào Trusted Root Certification Authorities của hệ điều hành. |
+| **Cấu hình Domain 1-Click** | `d:\WebGIS\scripts\setup_hosts.bat` (Win)<br>`d:\WebGIS\scripts\setup_hosts.sh` (Linux) | Tự động thêm bản ghi `127.0.0.1 seismicatlas.local` vào file `hosts`. |
+| **Nginx Gateway Reverse Proxy** | `d:\WebGIS\frontend\nginx.conf` | Mở cổng 80 (HTTP 301 $\rightarrow$ HTTPS) và cổng 443 (SSL TLS 1.2/1.3, HTTP/2, HSTS, 5 OWASP Security Headers, WSS/WebSocket). |
+| **Docker Compose** | `d:\WebGIS\docker-compose.yml` | Ánh xạ cổng `80` và `443`, mount volume `./certs:/etc/nginx/certs:ro` vào container gateway. |
+| **Backend Cookie Security** | `backend/data-serving/app/api/routes/auth.py` | Tự động cấu hình `Secure` flag cho Refresh Token cookie tương thích môi trường HTTPS production. |
+
+---
+
+## 2. Hướng Dẫn Sử Dụng Chi Tiết
+
+### Bước 1: Cài đặt Domain và Tin Cậy Root CA trên máy của bạn (Chỉ làm 1 lần)
+Mở Command Prompt hoặc PowerShell với quyền **Run as Administrator** tại thư mục dự án và chạy:
+
+1. **Thêm tên miền cục bộ vào file hosts:**
+   ```cmd
+   scripts\setup_hosts.bat
    ```
-   http://<IP_MAY_CHU_UBUNTU>
+2. **Thêm chứng chỉ Root CA vào Windows:**
+   ```cmd
+   scripts\install_root_ca.bat
    ```
-   *(Ví dụ: `http://192.168.1.100`)*
-2. **Kiểm tra các luồng nghiệp vụ:**
-   - Đăng nhập / Đăng ký tài khoản người dùng (`/login`).
-   - Đăng nhập tài khoản Quản trị viên (`/admin`) với tài khoản mặc định được tự động seed khi khởi động:
-     - **Email:** `admin@webgis.com`
-     - **Mật khẩu:** `Admin@123456`
-   - Quản trị viên theo dõi mức độ sử dụng CPU, RAM, Ổ đĩa máy chủ thời gian thực, quản lý danh sách người dùng, cấp quyền và đặt lại mật khẩu cho thành viên.
-   - Upload file địa chấn `.segy` dung lượng lớn -> Thanh tiến trình WebSocket cập nhật realtime.
-   - Bản đồ MapLibre hiển thị các đường khảo sát và mảnh Vector Tiles (MVT).
-   - Upload Shapefile ranh giới lô, thử nghiệm cắt lô, hoàn tác và xuất báo cáo Excel.
+   *(Hệ thống sẽ chạy lệnh `certutil -addstore -f "ROOT" certs\rootCA.crt` và báo thành công)*.
+
+*(Nếu muốn cấu hình cho các máy tính khác trong văn phòng cùng truy cập, xem Mục 3 bên dưới)*.
+
+---
+
+### Bước 2: Khởi động hệ thống với Docker Compose
+Chạy lệnh khởi động các container:
+```bash
+docker-compose up -d --build
+```
+
+---
+
+### Bước 3: Truy cập và Kiểm tra
+1. Mở trình duyệt (Chrome, Microsoft Edge, Cốc Cốc) và truy cập:
+   ```
+   https://seismicatlas.local
+   ```
+2. **Kết quả đạt chuẩn:**
+   - Trình duyệt hiển thị biểu tượng **Khóa Bảo Mật (Padlock)**.
+   - Nhấp vào biểu tượng khóa $\rightarrow$ Xem chứng chỉ: Được cấp bởi **"SeismicAtlas Internal Root CA"** với trạng thái **"This certificate is valid"**.
+   - Mọi API call, GIS Map Tiles, WebSocket (WSS) đều hoạt động trơn tru qua kênh mã hóa HTTPS bảo mật.
+
+---
+
+## 3. Hướng Dẫn Kết Nối Cho Các Máy Khác Trong Mạng LAN Văn Phòng
+
+Khi máy chủ vật lý đặt tại văn phòng (ví dụ có IP LAN là `192.168.1.100`):
+
+1. **Gửi 2 file cho nhân viên / máy trạm:**
+   - File `certs/rootCA.crt`
+   - File `scripts/install_root_ca.bat`
+2. **Trên máy trạm của nhân viên:**
+   - Nhấp chuột phải vào `install_root_ca.bat` $\rightarrow$ chọn **Run as Administrator** (hoặc nhấp đúp vào `rootCA.crt` $\rightarrow$ Install Certificate $\rightarrow$ Place in `Trusted Root Certification Authorities`).
+   - Mở file `C:\Windows\System32\drivers\etc\hosts` (bằng Notepad Administrator) và thêm dòng:
+     ```text
+     192.168.1.100    seismicatlas.local
+     ```
+     *(Hoặc nếu công ty có sẵn Router MikroTik / Pi-hole / Windows Server DNS, chỉ cần thêm 1 bản ghi DNS `seismicatlas.local` trỏ về `192.168.1.100` thì toàn bộ văn phòng tự động nhận diện mà không cần sửa file hosts từng máy)*.
+3. Nhân viên chỉ cần mở trình duyệt và gõ `https://seismicatlas.local` để làm việc.
+
+---
+
+## 4. Tái Tạo Chứng Chỉ (Khi Có Thêm IP Mới Hoặc Đổi Tên Miền)
+Nếu bạn thay đổi địa chỉ IP máy chủ hoặc muốn bổ sung thêm tên miền phụ:
+```cmd
+python scripts\generate_ssl_certs.py
+```
+*(Script sẽ tự động quét lại toàn bộ IP card mạng LAN của máy chủ và tái tạo cặp chứng chỉ mới tương thích)*.
 

@@ -23,6 +23,8 @@ FROM python:3.11-slim AS runner
 
 WORKDIR /app
 
+ENV PATH="/usr/local/bin:$PATH"
+
 # Install minimal shared runtime libraries (without compilers)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
@@ -34,10 +36,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /build/wheels /wheels
 RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
 
-# Copy application source code
-COPY . .
+# Create non-privileged user and group for security hardening
+RUN groupadd -r appgroup && useradd -r -g appgroup -d /app -s /sbin/nologin appuser
+
+# Copy application source code and set ownership
+COPY --chown=appuser:appgroup . .
+
+# Switch to non-root user
+USER appuser
 
 # Expose backend internal port
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+

@@ -17,6 +17,20 @@ from app.infrastructure.database.models import SeismicBlockModel
 from app.infrastructure.storage.minio_file_storage import MinioFileStorage
 
 
+def _safe_extract_zip(zip_file: zipfile.ZipFile, target_dir: str) -> None:
+    """
+    Trích xuất file zip an toàn tuyệt đối, ngăn chặn tấn công Zip Slip (Path Traversal).
+    Đảm bảo mọi file trích xuất đều nằm chặt chẽ bên trong target_dir.
+    """
+    resolved_target = os.path.abspath(target_dir)
+    for member in zip_file.infolist():
+        # Kiểm tra đường dẫn đích chuẩn hóa của từng file con
+        member_target = os.path.abspath(os.path.join(resolved_target, member.filename))
+        if not (member_target == resolved_target or member_target.startswith(resolved_target + os.sep)):
+            raise ValueError(f"Phát hiện tệp tin chứa đường dẫn không an toàn (Zip Slip Attempt): {member.filename}")
+        zip_file.extract(member, resolved_target)
+
+
 class BlockProcessingService:
     def __init__(self, db: Session):
         self.db = db
@@ -58,7 +72,7 @@ class BlockProcessingService:
     ) -> List[SeismicBlockModel]:
         """
         1. Save raw zip file to MinIO (bucket: blocks-raw-inputs).
-        2. Extract zip file content.
+        2. Extract zip file content securely with Zip Slip protection.
         3. Load shapefile with GeoPandas.
         4. Reproject/Force CRS to EPSG:4326 and run make_valid().
         5. Extract 'Block_id' attribute as block_code.
@@ -72,14 +86,14 @@ class BlockProcessingService:
 
             imported_blocks: List[SeismicBlockModel] = []
 
-            # Step 2: Extract zip to temporary directory
-            self._update_progress(task_id, "PROCESSING", 25, "Đang giải nén và kiểm tra thành phần Shapefile...")
+            # Step 2: Extract zip to temporary directory safely
+            self._update_progress(task_id, "PROCESSING", 25, "Đang giải nén và kiểm tra thành phần Shapefile an toàn...")
             with tempfile.TemporaryDirectory() as tmp_dir:
                 zip_path = Path(tmp_dir) / filename
                 zip_path.write_bytes(zip_bytes)
 
                 with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                    zip_ref.extractall(tmp_dir)
+                    _safe_extract_zip(zip_ref, tmp_dir)
 
                 # Find .shp file
                 shp_files = list(Path(tmp_dir).rglob("*.shp"))
@@ -87,6 +101,7 @@ class BlockProcessingService:
                     raise ValueError("Không tìm thấy file .shp trong file zip đã tải lên.")
 
                 shp_path = shp_files[0]
+
 
                 # Step 3: Load with GeoPandas
                 self._update_progress(task_id, "PROCESSING", 45, "Đang nạp dữ liệu không gian & chuẩn hóa hệ tọa độ EPSG:4326...")

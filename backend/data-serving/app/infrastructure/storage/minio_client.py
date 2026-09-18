@@ -80,12 +80,17 @@ class MinioClientManager:
                 "response-content-disposition": f'attachment; filename="{filename}"'
             }
 
-        return self.client.presigned_get_object(
+        url = self.client.presigned_get_object(
             bucket_name=bucket_name,
             object_name=clean_object_name,
             expires=timedelta(seconds=expires_seconds),
             response_headers=response_headers,
         )
+        # Convert internal Docker container URL (http://minio:9000/...) to relative URL (/{bucket}/...)
+        # so client browsers download through the Nginx Gateway over HTTPS seamlessly
+        if "minio:9000" in url:
+            url = url.replace("http://minio:9000", "")
+        return url
 
 
 minio_manager = MinioClientManager()

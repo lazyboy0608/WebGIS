@@ -25,34 +25,50 @@ from app.services.security import (
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
-# Cookie settings — không dùng HTTPS nên secure=False, samesite='lax'
-COOKIE_SETTINGS = {
-    "httponly": True,
-    "secure": False,      # Đặt True khi deploy lên HTTPS
-    "samesite": "lax",    # 'lax' hoạt động với Vite proxy (cùng origin)
-}
+# Cookie settings — Tu dong doc theo cau hinh HTTPS / settings.cookie_secure
+def get_cookie_settings() -> dict:
+    return {
+        "httponly": True,
+        "secure": settings.cookie_secure,
+        "samesite": "lax",
+    }
 
 
-def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
-    """Đặt cả hai token vào HTTPOnly Cookie."""
+def _set_auth_cookies(
+    response: Response,
+    access_token: str,
+    refresh_token: str,
+    remember_me: bool = False,
+) -> None:
+    """
+    Đặt cả hai token vào HTTPOnly Cookie.
+    - remember_me=True: Gán max_age cố định (Persistent Cookie lưu vào ổ đĩa).
+    - remember_me=False: Không gán max_age (Session Cookie chỉ lưu RAM, tự hủy khi tắt trình duyệt/tắt máy).
+    """
+    cookie_opts = get_cookie_settings()
+    access_max_age = (settings.access_token_expire_minutes * 60) if remember_me else None
+    refresh_max_age = (settings.refresh_token_expire_days * 24 * 60 * 60) if remember_me else None
+
     response.set_cookie(
         key="access_token",
         value=access_token,
-        max_age=settings.access_token_expire_minutes * 60,
-        **COOKIE_SETTINGS,
+        max_age=access_max_age,
+        **cookie_opts,
     )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
-        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
-        **COOKIE_SETTINGS,
+        max_age=refresh_max_age,
+        **cookie_opts,
     )
 
 
 def _clear_auth_cookies(response: Response) -> None:
     """Xóa cả hai cookie khi logout."""
-    response.delete_cookie(key="access_token", **COOKIE_SETTINGS)
-    response.delete_cookie(key="refresh_token", **COOKIE_SETTINGS)
+    cookie_opts = get_cookie_settings()
+    response.delete_cookie(key="access_token", **cookie_opts)
+    response.delete_cookie(key="refresh_token", **cookie_opts)
+
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -130,14 +146,14 @@ def login(
         subject=user.id,
         extra_claims={"email": user.email, "role": user.role, "full_name": user.full_name},
     )
-    refresh_token = create_refresh_token(subject=user.id)
+    refresh_token = create_refresh_token(subject=user.id, remember_me=user_in.remember_me)
 
     # Lưu hash refresh token vào DB (overwrite token cũ)
     user.refresh_token_hash = hash_token(refresh_token)
     db.commit()
 
     # Đặt cookie vào response
-    _set_auth_cookies(response, access_token, refresh_token)
+    _set_auth_cookies(response, access_token, refresh_token, remember_me=user_in.remember_me)
 
     return TokenResponse(
         user=UserResponse.model_validate(user),
@@ -169,6 +185,8 @@ def refresh_tokens(
     if not payload or "sub" not in payload:
         raise credentials_exception
 
+    remember_me = bool(payload.get("remember_me", False))
+
     try:
         user_id = int(payload["sub"])
     except (ValueError, TypeError):
@@ -187,14 +205,14 @@ def refresh_tokens(
         subject=user.id,
         extra_claims={"email": user.email, "role": user.role, "full_name": user.full_name},
     )
-    new_refresh_token = create_refresh_token(subject=user.id)
+    new_refresh_token = create_refresh_token(subject=user.id, remember_me=remember_me)
 
     # Cập nhật hash refresh token trong DB
     user.refresh_token_hash = hash_token(new_refresh_token)
     db.commit()
 
     # Đặt cookie mới
-    _set_auth_cookies(response, new_access_token, new_refresh_token)
+    _set_auth_cookies(response, new_access_token, new_refresh_token, remember_me=remember_me)
 
     return TokenResponse(
         user=UserResponse.model_validate(user),

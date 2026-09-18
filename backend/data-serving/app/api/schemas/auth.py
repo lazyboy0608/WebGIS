@@ -1,6 +1,21 @@
+import re
 from datetime import date, datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+
+
+def validate_password_complexity(v: str) -> str:
+    if len(v) < 8:
+        raise ValueError("Mật khẩu phải có ít nhất 8 ký tự")
+    if not re.search(r'[A-Z]', v):
+        raise ValueError("Mật khẩu phải chứa ít nhất 1 chữ hoa (A-Z)")
+    if not re.search(r'[a-z]', v):
+        raise ValueError("Mật khẩu phải chứa ít nhất 1 chữ thường (a-z)")
+    if not re.search(r'\d', v):
+        raise ValueError("Mật khẩu phải chứa ít nhất 1 chữ số (0-9)")
+    if not re.search(r'[@$!%*?&#^()_+\-=\[\]{};\':"\\|,.<>\/?~`]', v):
+        raise ValueError("Mật khẩu phải chứa ít nhất 1 ký tự đặc biệt (ví dụ: @, $, !, %, *, ?, &, #...)")
+    return v
 
 
 class UserRegister(BaseModel):
@@ -8,8 +23,13 @@ class UserRegister(BaseModel):
     phone_number: str = Field(..., min_length=8, max_length=50, description="Số điện thoại")
     email: EmailStr = Field(..., description="Email")
     date_of_birth: date = Field(..., description="Ngày sinh (YYYY-MM-DD)")
-    password: str = Field(..., min_length=6, max_length=128, description="Mật khẩu")
-    confirm_password: str = Field(..., min_length=6, max_length=128, description="Xác nhận mật khẩu")
+    password: str = Field(..., min_length=8, max_length=128, description="Mật khẩu")
+    confirm_password: str = Field(..., min_length=8, max_length=128, description="Xác nhận mật khẩu")
+
+    @field_validator("password")
+    @classmethod
+    def check_password_complexity(cls, v: str) -> str:
+        return validate_password_complexity(v)
 
     @model_validator(mode="after")
     def check_passwords_match(self):
@@ -18,9 +38,11 @@ class UserRegister(BaseModel):
         return self
 
 
+
 class UserLogin(BaseModel):
     email: EmailStr = Field(..., description="Email đăng nhập")
     password: str = Field(..., description="Mật khẩu")
+    remember_me: bool = Field(False, description="Ghi nhớ đăng nhập (Persistent Cookie)")
 
 
 class UserResponse(BaseModel):

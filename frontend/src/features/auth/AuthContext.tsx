@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (payload: LoginPayload) => Promise<void>;
+  login: (payload: LoginPayload) => Promise<User>;
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updatedUser: User) => void;
@@ -35,10 +35,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  const login = async (payload: LoginPayload) => {
+  const login = async (payload: LoginPayload): Promise<User> => {
     const res = await loginApi(payload);
     // Server đã set cookie — chỉ cần lưu user vào state
     setUser(res.user);
+    return res.user;
   };
 
   const register = async (payload: RegisterPayload) => {

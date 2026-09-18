@@ -173,15 +173,26 @@ export const AdminDashboard: React.FC = () => {
         <div className="perf-card">
           <div className="perf-header">
             <strong>Redis Cache Hit Ratio</strong>
-            <span className="perf-badge success">{stats?.cache_hit_ratio}%</span>
+            <span className="perf-badge success">{stats?.cache_hit_ratio ?? 0}%</span>
           </div>
           <div className="progress-bar-bg">
             <div
               className="progress-bar-fill"
-              style={{ width: `${stats?.cache_hit_ratio || 90}%`, background: '#10b981' }}
+              style={{
+                width: `${Math.min(Math.max(stats?.cache_hit_ratio ?? 0, 0), 100)}%`,
+                background: (stats?.cache_hit_ratio ?? 0) >= 70 ? '#10b981' : (stats?.cache_hit_ratio ?? 0) >= 40 ? '#f59e0b' : '#3b82f6',
+              }}
             />
           </div>
-          <small className="perf-desc">Tốc độ phản hồi MVT Vector Tiles & Query tối ưu</small>
+          <small className="perf-desc">
+            {stats?.cache_keyspace_hits !== undefined && stats?.cache_keyspace_misses !== undefined ? (
+              <span>
+                <strong>{stats.cache_keyspace_hits}</strong> hits / <strong>{stats.cache_keyspace_hits + stats.cache_keyspace_misses}</strong> reqs ({stats.cache_total_keys ?? 0} keys cached)
+              </span>
+            ) : (
+              'Tốc độ phản hồi MVT Vector Tiles & Query tối ưu'
+            )}
+          </small>
         </div>
 
         <div className="perf-card">

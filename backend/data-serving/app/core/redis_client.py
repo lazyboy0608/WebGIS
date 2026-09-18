@@ -130,6 +130,52 @@ class RedisClient:
             logger.warning(f"Redis delete_pattern failed for {pattern}: {exc}")
             return 0
 
+    def get_cache_stats(self) -> dict:
+        """
+        Lấy thống kê hiệu năng thời gian thực trực tiếp từ Redis engine:
+        - keyspace_hits
+        - keyspace_misses
+        - total_requests (hits + misses)
+        - hit_ratio (% thành công)
+        - total_keys (tổng số key qua DBSIZE)
+        - used_memory_human
+        """
+        default_stats = {
+            "is_connected": False,
+            "keyspace_hits": 0,
+            "keyspace_misses": 0,
+            "total_requests": 0,
+            "hit_ratio": 0.0,
+            "total_keys": 0,
+            "used_memory_human": "0B",
+        }
+        if not self._client or not settings.redis_cache_enabled:
+            return default_stats
+
+        try:
+            info_stats = self._client.info("stats")
+            info_memory = self._client.info("memory")
+            dbsize = self._client.dbsize()
+
+            hits = int(info_stats.get("keyspace_hits", 0))
+            misses = int(info_stats.get("keyspace_misses", 0))
+            total = hits + misses
+            # Nếu chưa phát sinh request nào, mặc định 100.0% nếu đã có keys, ngược lại 0.0%
+            ratio = round((hits / total) * 100, 1) if total > 0 else (100.0 if dbsize > 0 else 0.0)
+
+            return {
+                "is_connected": True,
+                "keyspace_hits": hits,
+                "keyspace_misses": misses,
+                "total_requests": total,
+                "hit_ratio": ratio,
+                "total_keys": int(dbsize),
+                "used_memory_human": str(info_memory.get("used_memory_human", "0B")),
+            }
+        except Exception as exc:
+            logger.warning(f"Lỗi khi truy vấn thông số thống kê Redis: {exc}")
+            return default_stats
+
 
 # Global singleton instance
 redis_cache = RedisClient()

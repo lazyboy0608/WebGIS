@@ -64,7 +64,7 @@ class ShotPointAnalyzer:
                 self._coordinate_transformer.transform(
                     x=trace.header.source_x,
                     y=trace.header.source_y,
-                    scalar=trace.header.coordinate_scalar,
+                    scalar=getattr(trace.header, "effective_coordinate_scalar", getattr(trace.header, "coordinate_scalar", 1)),
                     coordinate_units=(
                         trace.header.coordinate_units
                     ),

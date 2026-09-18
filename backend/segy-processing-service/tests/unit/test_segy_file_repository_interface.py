@@ -29,7 +29,7 @@ def test_repository_interface_can_be_implemented():
         def get_by_id(self, file_id: int):
             return None
 
-        def get_by_filename(self, filename: str):
+        def get_by_filename(self, filename: str, user_id: int | None = None):
             return None
 
         def list_all(self):

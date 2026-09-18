@@ -283,6 +283,10 @@ class SegyIOReader(SegyReader):
                 segyio.TraceField.CDP_Y
             ] if segyio.TraceField.CDP_Y in header else 0,
 
+            elevation_scalar=header[
+                segyio.TraceField.ElevationScalar
+            ] if segyio.TraceField.ElevationScalar in header else 0,
+
             coordinate_scalar=header[
                 segyio.TraceField.SourceGroupScalar
             ],

@@ -18,6 +18,15 @@ class FakeHeader:
     source_y: int
     coordinate_scalar: int
     coordinate_units: int
+    elevation_scalar: int = 1
+
+    @property
+    def effective_coordinate_scalar(self) -> int:
+        if self.coordinate_scalar is not None and self.coordinate_scalar not in (0, 1):
+            return self.coordinate_scalar
+        if self.elevation_scalar is not None and self.elevation_scalar not in (0, 1):
+            return self.elevation_scalar
+        return 1
 
 
 @dataclass
@@ -149,3 +158,23 @@ def test_process_trace_fallback_coordinates() -> None:
     result = processor.process(trace)
     assert result.coordinate.x == 500000
     assert result.coordinate.y == 1100000
+
+
+def test_process_trace_falls_back_to_elevation_scalar_saed() -> None:
+    processor = create_processor()
+
+    trace = FakeTrace(
+        index=0,
+        header=FakeHeader(
+            energy_source_point=1,
+            source_x=22440238,
+            source_y=88800263,
+            coordinate_scalar=1,  # SAC is 1 (unscaled)
+            elevation_scalar=-100,  # SAED is -100 (Image 2 case)
+            coordinate_units=0,
+        ),
+    )
+
+    result = processor.process(trace)
+    assert result.coordinate.x == 224402.38
+    assert result.coordinate.y == 888002.63

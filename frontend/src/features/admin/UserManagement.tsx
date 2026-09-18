@@ -156,7 +156,14 @@ export const UserManagement: React.FC = () => {
       return;
     }
 
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=\[\]{};':"\\|,.<>\/?~`])[A-Za-z\d@$!%*?&#^()_+\-=\[\]{};':"\\|,.<>\/?~`]{8,}$/;
+    if (!passwordRegex.test(newPassword)) {
+      setModalError('Mật khẩu phải có ít nhất 8 ký tự, gồm chữ hoa, chữ thường, chữ số và ký tự đặc biệt (ví dụ: WebGIS@2026).');
+      return;
+    }
+
     setSubmitting(true);
+
     try {
       const payload: AdminUserCreatePayload = {
         full_name: newFullName.trim(),
@@ -167,6 +174,7 @@ export const UserManagement: React.FC = () => {
         role: newRole,
         is_active: newIsActive,
       };
+
 
       await createAdminUserApi(payload);
       setShowAddModal(false);
@@ -235,10 +243,17 @@ export const UserManagement: React.FC = () => {
   const handleConfirmResetPassword = async () => {
     if (!selectedUser) return;
     setModalError(null);
-    setSubmitting(true);
 
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=\[\]{};':"\\|,.<>\/?~`])[A-Za-z\d@$!%*?&#^()_+\-=\[\]{};':"\\|,.<>\/?~`]{8,}$/;
+    if (customPassword.trim() && !passwordRegex.test(customPassword.trim())) {
+      setModalError('Mật khẩu mới phải có ít nhất 8 ký tự, gồm chữ hoa, chữ thường, chữ số và ký tự đặc biệt (ví dụ: WebGIS@2026).');
+      return;
+    }
+
+    setSubmitting(true);
     try {
       const res = await resetUserPasswordApi(selectedUser.id, customPassword.trim());
+
       setResetSuccessMessage(
         `Đã đặt lại mật khẩu cho tài khoản "${res.email}" thành: ${res.new_password}`
       );

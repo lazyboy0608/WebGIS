@@ -1,6 +1,21 @@
 from datetime import date, datetime
+import re
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+def validate_password_complexity(v: str) -> str:
+    if len(v) < 8:
+        raise ValueError("Mật khẩu phải có ít nhất 8 ký tự")
+    if not re.search(r'[A-Z]', v):
+        raise ValueError("Mật khẩu phải chứa ít nhất 1 chữ hoa (A-Z)")
+    if not re.search(r'[a-z]', v):
+        raise ValueError("Mật khẩu phải chứa ít nhất 1 chữ thường (a-z)")
+    if not re.search(r'\d', v):
+        raise ValueError("Mật khẩu phải chứa ít nhất 1 chữ số (0-9)")
+    if not re.search(r'[@$!%*?&#^()_+\-=\[\]{};\':"\\|,.<>\/?~`]', v):
+        raise ValueError("Mật khẩu phải chứa ít nhất 1 ký tự đặc biệt (ví dụ: @, $, !, %, *, ?, &, #...)")
+    return v
 
 
 class AdminDashboardStats(BaseModel):
@@ -17,6 +32,10 @@ class AdminDashboardStats(BaseModel):
     disk_total_gb: float = Field(..., description="Tổng dung lượng Ổ đĩa (GB)")
     active_sessions: int = Field(..., description="Số lượng phiên truy cập thời gian thực")
     cache_hit_ratio: float = Field(..., description="Tỷ lệ Cache Hit của Redis (%)")
+    cache_keyspace_hits: int = Field(default=0, description="Số lượt truy xuất cache trúng (Hits)")
+    cache_keyspace_misses: int = Field(default=0, description="Số lượt truy xuất cache trượt (Misses)")
+    cache_total_keys: int = Field(default=0, description="Tổng số key đang cache trong Redis")
+    cache_used_memory: Optional[str] = Field(default="0B", description="Dung lượng RAM Redis đang dùng")
     database_status: str = Field(..., description="Trạng thái kết nối PostGIS")
     user_growth: List[Dict[str, Any]] = Field(default_factory=list, description="Dữ liệu tăng trưởng người dùng theo ngày")
     role_distribution: Dict[str, int] = Field(default_factory=dict, description="Phân bổ theo vai trò")
@@ -44,9 +63,14 @@ class AdminUserCreate(BaseModel):
     phone_number: str = Field(..., min_length=8, max_length=20)
     email: EmailStr
     date_of_birth: date
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=8)
     role: str = Field(default="user", pattern="^(user|admin)$")
     is_active: bool = True
+
+    @field_validator("password")
+    @classmethod
+    def check_password_complexity(cls, v: str) -> str:
+        return validate_password_complexity(v)
 
 
 class AdminUserUpdate(BaseModel):
@@ -58,4 +82,12 @@ class AdminUserUpdate(BaseModel):
 
 
 class AdminResetPasswordRequest(BaseModel):
-    new_password: Optional[str] = Field(None, min_length=6, description="Mật khẩu mới (Nếu để trống hệ thống sẽ cấp mật khẩu tạm WebGIS@2026)")
+    new_password: Optional[str] = Field(None, min_length=8, description="Mật khẩu mới (Nếu để trống hệ thống sẽ cấp mật khẩu tạm WebGIS@2026)")
+
+    @field_validator("new_password")
+    @classmethod
+    def check_password_complexity(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip() != "":
+            return validate_password_complexity(v.strip())
+        return v
+

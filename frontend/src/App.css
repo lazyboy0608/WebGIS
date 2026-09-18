@@ -811,6 +811,29 @@ select { width: 100%; padding: 13px 10px; border: 1px solid #bfcac4; border-radi
   color: #c9d1d9;
   border-radius: 8px;
   padding: 24px;
+  max-height: 88vh;
+  overflow-y: scroll !important; /* Thanh scroll dọc cho chính modal */
+  scrollbar-width: thin;
+  scrollbar-color: #388bfd #0d1117;
+}
+
+.modal-box--crs::-webkit-scrollbar {
+  width: 10px;
+}
+
+.modal-box--crs::-webkit-scrollbar-track {
+  background: #0d1117;
+  border-radius: 0 8px 8px 0;
+}
+
+.modal-box--crs::-webkit-scrollbar-thumb {
+  background: #388bfd;
+  border-radius: 6px;
+  border: 2px solid #0d1117;
+}
+
+.modal-box--crs::-webkit-scrollbar-thumb:hover {
+  background: #58a6ff;
 }
 
 .modal-header-with-icon {
@@ -882,7 +905,13 @@ select { width: 100%; padding: 13px 10px; border: 1px solid #bfcac4; border-radi
 .crs-source-badge.badge-detected {
   background: rgba(35, 134, 54, 0.2);
   color: #3fb950;
-  border: 1px solid rgba(56, 139, 253, 0.4);
+  border: 1px solid rgba(63, 185, 80, 0.4);
+}
+
+.crs-source-badge.badge-custom {
+  background: rgba(210, 153, 34, 0.2);
+  color: #e3b341;
+  border: 1px solid rgba(210, 153, 34, 0.4);
 }
 
 .crs-source-badge.badge-default {
@@ -1066,6 +1095,266 @@ select { width: 100%; padding: 13px 10px; border: 1px solid #bfcac4; border-radi
   overflow-y: auto;
   white-space: pre-wrap;
   line-height: 1.4;
+}
+
+.modal-box--crs {
+  max-width: 880px !important;
+  width: 95% !important;
+  max-height: 88vh !important;
+  overflow-y: scroll !important; /* Luôn hiển thị thanh scroll dọc cho chính modal này */
+  padding: 24px;
+  position: relative;
+  scrollbar-width: thin;
+  scrollbar-color: #388bfd #0d1117;
+}
+
+.modal-box--crs::-webkit-scrollbar {
+  width: 10px;
+}
+
+.modal-box--crs::-webkit-scrollbar-track {
+  background: #0d1117;
+  border-radius: 6px;
+}
+
+.modal-box--crs::-webkit-scrollbar-thumb {
+  background: #388bfd;
+  border-radius: 6px;
+  border: 2px solid #0d1117;
+}
+
+.modal-box--crs::-webkit-scrollbar-thumb:hover {
+  background: #58a6ff;
+}
+
+.modal-box--crs-wide {
+  max-width: 880px !important;
+  width: 95% !important;
+}
+
+/* ── CRS Modal Body Scrollbar ── */
+.crs-modal-body {
+  scrollbar-width: thin;
+  scrollbar-color: #388bfd #161b22;
+}
+
+.crs-modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.crs-modal-body::-webkit-scrollbar-track {
+  background: #0d1117;
+  border-radius: 4px;
+}
+
+.crs-modal-body::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 4px;
+  border: 1px solid #21262d;
+}
+
+.crs-modal-body::-webkit-scrollbar-thumb:hover {
+  background: #58a6ff;
+}
+
+/* ── Parsed Header Details Cards (Ảnh 1) ── */
+.crs-header-details-container {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.crs-header-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.crs-detail-card {
+  background: #161b22;
+  border: 1px solid #21262d;
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: border-color 0.15s ease;
+}
+
+.crs-detail-card:hover {
+  border-color: #388bfd;
+}
+
+.crs-detail-card.highlight-card {
+  border-color: #1f6feb;
+  background: rgba(31, 111, 235, 0.1);
+}
+
+.crs-detail-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8b949e;
+  font-weight: 600;
+}
+
+.crs-detail-val {
+  font-size: 12px;
+  color: #f0f6fc;
+  font-family: 'DM Mono', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crs-detail-val.highlight {
+  color: #58a6ff;
+  font-weight: 700;
+}
+
+/* ── Trace Inspection Preview Table (Ảnh 2 & Ảnh 3) ── */
+.crs-trace-preview-section {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.crs-trace-table-container {
+  padding: 0;
+  background: #090d13;
+  border-top: 1px solid #21262d;
+  max-height: 220px;
+  overflow-x: scroll !important; /* Luôn hiển thị thanh scroll ngang cho bảng trace */
+  overflow-y: scroll !important; /* Luôn hiển thị thanh scroll dọc cho bảng trace */
+  scrollbar-width: thin;
+  scrollbar-color: #388bfd #161b22;
+}
+
+.crs-trace-table-container::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.crs-trace-table-container::-webkit-scrollbar-track {
+  background: #161b22;
+  border-radius: 4px;
+}
+
+.crs-trace-table-container::-webkit-scrollbar-thumb {
+  background: #388bfd;
+  border-radius: 4px;
+  border: 2px solid #161b22;
+}
+
+.crs-trace-table-container::-webkit-scrollbar-thumb:hover {
+  background: #58a6ff;
+}
+
+.crs-trace-table-container::-webkit-scrollbar-corner {
+  background: #161b22;
+}
+
+.crs-trace-table {
+  width: 100%;
+  min-width: 1040px !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  font-size: 11px;
+  font-family: 'DM Mono', monospace;
+  background: #0d1117;
+  white-space: nowrap !important;
+}
+
+.crs-trace-table th {
+  background: #161b22 !important;
+  color: #8b949e;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-bottom: 2px solid #30363d;
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  white-space: nowrap !important;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.crs-trace-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid #1c2128;
+  color: #c9d1d9;
+  white-space: nowrap !important;
+  background: #0d1117;
+}
+
+.crs-trace-table tr:last-child td {
+  border-bottom: none;
+}
+
+.crs-trace-table tr:hover td {
+  background: rgba(56, 139, 253, 0.08);
+}
+
+.crs-trace-table .center-cell {
+  text-align: center;
+}
+
+.crs-trace-table .right-cell {
+  text-align: right;
+}
+
+.badge-sac {
+  background: rgba(56, 139, 253, 0.15);
+  color: #58a6ff !important;
+  font-weight: 600;
+}
+
+.badge-saed {
+  background: rgba(163, 113, 247, 0.15);
+  color: #bc8cff !important;
+  font-weight: 600;
+}
+
+.cell-highlight-sac {
+  color: #58a6ff !important;
+  font-weight: 600;
+}
+
+.cell-highlight-saed {
+  color: #bc8cff !important;
+  font-weight: 600;
+}
+
+.dim-cell {
+  color: #484f58 !important;
+}
+
+.bold-cell {
+  font-weight: 700;
+  color: #e6edf3;
+}
+
+.green-cell {
+  color: #3fb950 !important;
+  font-weight: 600;
+}
+
+.mono-font {
+  font-family: 'DM Mono', monospace;
+}
+
+.crs-table-footnote {
+  display: block;
+  font-size: 10px;
+  color: #8b949e;
+  margin-top: 8px;
+  line-height: 1.4;
+  font-style: italic;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
