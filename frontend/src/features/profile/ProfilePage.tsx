@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { updateProfileApi, uploadAvatarApi } from '../auth/authService';
+import { AvatarCropModal } from './AvatarCropModal';
 import '../../App.css';
 
 // Chuyển đổi từ ISO (YYYY-MM-DD) sang hiển thị kiểu Việt Nam (DD/MM/YYYY)
@@ -50,6 +51,10 @@ export const ProfilePage: React.FC = () => {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatar_url || null);
   const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
   
+  // Trạng thái cho hộp thoại cắt ảnh (Crop Modal)
+  const [cropModalOpen, setCropModalOpen] = useState<boolean>(false);
+  const [rawImageForCrop, setRawImageForCrop] = useState<string | null>(null);
+
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -61,17 +66,41 @@ export const ProfilePage: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate size (<= 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMsg('Ảnh đại diện không được vượt quá 5MB');
+    // Validate định dạng ảnh
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      setErrorMsg('Chỉ hỗ trợ file ảnh định dạng JPG, PNG, WEBP hoặc GIF');
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
-    setSelectedAvatarFile(file);
+    // Validate size (<= 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg('Ảnh đại diện không được vượt quá 10MB');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    // Mở hộp thoại cắt ảnh tròn để căn chỉnh vị trí mong muốn
     const objectUrl = URL.createObjectURL(file);
-    setAvatarPreview(objectUrl);
+    setRawImageForCrop(objectUrl);
+    setCropModalOpen(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+  };
+
+  const handleCropComplete = (croppedFile: File, croppedPreviewUrl: string) => {
+    setSelectedAvatarFile(croppedFile);
+    setAvatarPreview(croppedPreviewUrl);
+    setCropModalOpen(false);
+    setRawImageForCrop(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleCropCancel = () => {
+    setCropModalOpen(false);
+    setRawImageForCrop(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDobChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,6 +155,9 @@ export const ProfilePage: React.FC = () => {
       };
 
       updateUser(finalUser);
+      if (finalUser.avatar_url) {
+        setAvatarPreview(finalUser.avatar_url);
+      }
       setDateOfBirthDisplay(formatIsoToDisplayDate(finalUser.date_of_birth));
       setSuccessMsg('Cập nhật thông tin cá nhân thành công!');
     } catch (err: any) {
@@ -320,6 +352,15 @@ export const ProfilePage: React.FC = () => {
           </form>
         </div>
       </main>
+
+      {/* Hộp thoại cắt ảnh đại diện trực quan */}
+      {cropModalOpen && rawImageForCrop && (
+        <AvatarCropModal
+          imageSrc={rawImageForCrop}
+          onCropComplete={handleCropComplete}
+          onClose={handleCropCancel}
+        />
+      )}
     </div>
   );
 };

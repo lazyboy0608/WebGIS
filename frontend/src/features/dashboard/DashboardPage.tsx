@@ -718,10 +718,20 @@ export const DashboardPage: React.FC = () => {
               >
                 <div className="user-dropdown-avatar">
                   {user.avatar_url ? (
-                    <img src={user.avatar_url} alt={user.full_name} className="avatar-img-sm" />
-                  ) : (
-                    <span>{user.full_name ? user.full_name[0].toUpperCase() : 'U'}</span>
-                  )}
+                    <img
+                      src={user.avatar_url}
+                      alt={user.full_name}
+                      className="avatar-img-sm"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                        if (fallback) fallback.style.display = 'inline';
+                      }}
+                    />
+                  ) : null}
+                  <span style={{ display: user.avatar_url ? 'none' : 'inline' }}>
+                    {user.full_name ? user.full_name[0].toUpperCase() : 'U'}
+                  </span>
                 </div>
                 <span className="user-dropdown-name">{user.full_name || user.email}</span>
                 <span className="user-dropdown-caret">{showUserDropdown ? '▲' : '▼'}</span>

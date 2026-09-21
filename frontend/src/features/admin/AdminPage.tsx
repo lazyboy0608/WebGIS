@@ -53,10 +53,20 @@ export const AdminPage: React.FC = () => {
               >
                 <div className="user-dropdown-avatar" style={{ background: '#e4572e' }}>
                   {user.avatar_url ? (
-                    <img src={user.avatar_url} alt={user.full_name} className="avatar-img-sm" />
-                  ) : (
-                    <span>{initials}</span>
-                  )}
+                    <img
+                      src={user.avatar_url}
+                      alt={user.full_name}
+                      className="avatar-img-sm"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                        if (fallback) fallback.style.display = 'inline';
+                      }}
+                    />
+                  ) : null}
+                  <span style={{ display: user.avatar_url ? 'none' : 'inline' }}>
+                    {initials}
+                  </span>
                 </div>
                 <span className="user-dropdown-name">{user.full_name || user.email}</span>
                 <span className="user-dropdown-caret">{showUserDropdown ? '▲' : '▼'}</span>

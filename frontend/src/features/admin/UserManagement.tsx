@@ -410,11 +410,23 @@ export const UserManagement: React.FC = () => {
                     <td>
                       <div className="table-user-cell">
                         <div className="table-avatar">
-                          {u.avatar_url ? (
-                            <img src={u.avatar_url} alt={u.full_name} className="table-avatar-img" />
-                          ) : (
-                            <span>{initials}</span>
-                          )}
+                          <div className="table-avatar-inner">
+                            {u.avatar_url ? (
+                              <img
+                                src={u.avatar_url}
+                                alt={u.full_name}
+                                className="table-avatar-img"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                                  if (fallback) fallback.style.display = 'inline';
+                                }}
+                              />
+                            ) : null}
+                            <span style={{ display: u.avatar_url ? 'none' : 'inline' }}>
+                              {initials}
+                            </span>
+                          </div>
                           <span
                             className={`avatar-online-dot ${u.is_online ? 'online' : 'offline'}`}
                             title={u.is_online ? 'Đang online' : 'Ngoại tuyến (Offline)'}
