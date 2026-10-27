@@ -124,6 +124,8 @@ services:
       dockerfile: Dockerfile
     container_name: webgis-data-serving
     restart: always
+    env_file:
+      - ./backend/data-serving/.env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
@@ -139,6 +141,8 @@ services:
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD}
       DEFAULT_ADMIN_FULLNAME: ${DEFAULT_ADMIN_FULLNAME:-System Administrator}
       DEFAULT_ADMIN_PHONE: ${DEFAULT_ADMIN_PHONE:-0987654321}
+      RATE_LIMIT_LOGIN: ${RATE_LIMIT_LOGIN:-20}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-120}
     depends_on:
       redis:
         condition: service_healthy
