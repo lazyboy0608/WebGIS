@@ -156,6 +156,24 @@ CRS_PRESETS = [
         "description": "Hệ tọa độ Hà Nội 1972 - Múi 49N",
         "category": "Lịch sử (Hanoi 1972)",
     },
+    {
+        "code": "EPSG:26781",
+        "name": "NAD27 / Louisiana North",
+        "description": "Bắc bang Louisiana, Hoa Kỳ (FIPS 1701)",
+        "category": "Bắc Mỹ & Quốc tế",
+    },
+    {
+        "code": "EPSG:26782",
+        "name": "NAD27 / Louisiana South",
+        "description": "Nam bang Louisiana & Vịnh Mexico (FIPS 1702 - Dữ liệu slb1.sgy)",
+        "category": "Bắc Mỹ & Quốc tế",
+    },
+    {
+        "code": "EPSG:32099",
+        "name": "NAD27 / Louisiana Offshore",
+        "description": "Vùng nước sâu ngoài khơi bang Louisiana, Vịnh Mexico",
+        "category": "Bắc Mỹ & Quốc tế",
+    },
 ]
 
 

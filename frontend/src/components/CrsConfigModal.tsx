@@ -86,6 +86,7 @@ export const CrsConfigModal: React.FC<CrsConfigModalProps> = ({
     return presets.filter(
       (p) =>
         p.code.toLowerCase().includes(q) ||
+        p.code.toLowerCase().replace('epsg:', '').includes(q) ||
         p.name.toLowerCase().includes(q) ||
         (p.category && p.category.toLowerCase().includes(q)) ||
         (p.description && p.description.toLowerCase().includes(q))
@@ -98,6 +99,7 @@ export const CrsConfigModal: React.FC<CrsConfigModalProps> = ({
     return presets.filter(
       (p) =>
         p.code.toLowerCase().includes(q) ||
+        p.code.toLowerCase().replace('epsg:', '').includes(q) ||
         p.name.toLowerCase().includes(q) ||
         (p.category && p.category.toLowerCase().includes(q)) ||
         (p.description && p.description.toLowerCase().includes(q))
@@ -112,23 +114,22 @@ export const CrsConfigModal: React.FC<CrsConfigModalProps> = ({
   function cleanCrsInput(input: string, presetList: CrsPreset[]): string {
     if (!input) return 'EPSG:4326';
     const trimmed = input.trim();
+    const candidateCode = /^\d+$/.test(trimmed) ? `EPSG:${trimmed}` : trimmed;
 
     // 1. Direct match with preset code or full label
     const exactPreset = presetList.find(
       (p) =>
+        p.code.toLowerCase() === candidateCode.toLowerCase() ||
         p.code.toLowerCase() === trimmed.toLowerCase() ||
         `${p.code} - ${p.name}`.toLowerCase() === trimmed.toLowerCase()
     );
     if (exactPreset) return exactPreset.code;
 
     // 2. Extract EPSG:XXXX if present
-    const epsgMatch = trimmed.match(/EPSG:\d+/i);
+    const epsgMatch = candidateCode.match(/EPSG:\d+/i);
     if (epsgMatch) return epsgMatch[0].toUpperCase();
 
-    // 3. Digits only
-    if (/^\d+$/.test(trimmed)) return `EPSG:${trimmed}`;
-
-    // 4. Fuzzy match against preset name or category
+    // 3. Fuzzy match against preset name or category
     const fuzzy = presetList.find(
       (p) =>
         p.name.toLowerCase().includes(trimmed.toLowerCase()) ||
@@ -136,7 +137,7 @@ export const CrsConfigModal: React.FC<CrsConfigModalProps> = ({
     );
     if (fuzzy) return fuzzy.code;
 
-    return trimmed;
+    return candidateCode;
   }
 
   const handleSelectSourcePreset = (preset: CrsPreset) => {
@@ -333,8 +334,23 @@ export const CrsConfigModal: React.FC<CrsConfigModalProps> = ({
                         </div>
                       ))
                     ) : (
-                      <div className="crs-preset-empty">
-                        <small>Bạn có thể sử dụng trực tiếp: <strong>{sourceCrsQuery}</strong></small>
+                      <div
+                        className="crs-preset-item is-selected"
+                        style={{ cursor: 'pointer', background: 'rgba(56, 139, 253, 0.15)', borderColor: '#388bfd' }}
+                        onClick={() => {
+                          const cleaned = cleanCrsInput(sourceCrsQuery, presets);
+                          setSelectedSourceCrs(cleaned);
+                          setSourceCrsQuery(cleaned);
+                          setIsSourceDropdownOpen(false);
+                        }}
+                      >
+                        <div className="crs-preset-top">
+                          <span className="crs-preset-code">✓ {cleanCrsInput(sourceCrsQuery, presets)}</span>
+                          <span className="crs-preset-category" style={{ background: '#238636', color: '#fff', padding: '2px 6px', borderRadius: '4px' }}>Hệ tọa độ tùy chọn</span>
+                        </div>
+                        <div className="crs-preset-name">
+                          Bấm để xác nhận sử dụng hệ tọa độ này cho tệp SEG-Y
+                        </div>
                       </div>
                     )}
                   </div>
@@ -408,8 +424,23 @@ export const CrsConfigModal: React.FC<CrsConfigModalProps> = ({
                         </div>
                       ))
                     ) : (
-                      <div className="crs-preset-empty">
-                        <small>Không tìm thấy mẫu phù hợp. Bạn có thể sử dụng trực tiếp: <strong>{targetCrsQuery}</strong></small>
+                      <div
+                        className="crs-preset-item is-selected"
+                        style={{ cursor: 'pointer', background: 'rgba(56, 139, 253, 0.15)', borderColor: '#388bfd' }}
+                        onClick={() => {
+                          const cleaned = cleanCrsInput(targetCrsQuery, presets);
+                          setSelectedTargetCrs(cleaned);
+                          setTargetCrsQuery(cleaned);
+                          setIsTargetDropdownOpen(false);
+                        }}
+                      >
+                        <div className="crs-preset-top">
+                          <span className="crs-preset-code">✓ {cleanCrsInput(targetCrsQuery, presets)}</span>
+                          <span className="crs-preset-category" style={{ background: '#238636', color: '#fff', padding: '2px 6px', borderRadius: '4px' }}>Hệ tọa độ tùy chọn</span>
+                        </div>
+                        <div className="crs-preset-name">
+                          Bấm để xác nhận chuyển đổi sang hệ tọa độ này
+                        </div>
                       </div>
                     )}
                   </div>

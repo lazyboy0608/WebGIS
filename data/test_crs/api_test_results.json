@@ -1,0 +1,429 @@
+{
+  "summary": {
+    "total": 42,
+    "passed": 41,
+    "failed": 1
+  },
+  "details": [
+    {
+      "method": "POST",
+      "endpoint": "/api/v1/auth/login",
+      "category": "Xác thực & Người dùng",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 634.72,
+      "detail": "User: admin@webgis.com",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/v1/auth/me",
+      "category": "Xác thực & Người dùng",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 11.09,
+      "detail": "Role: admin",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/v1/auth/heartbeat",
+      "category": "Xác thực & Người dùng",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 8.1,
+      "detail": "Heartbeat OK",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/v1/auth/refresh",
+      "category": "Xác thực & Người dùng",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 699.5,
+      "detail": "Token refreshed",
+      "error": ""
+    },
+    {
+      "method": "PUT",
+      "endpoint": "/api/v1/auth/me",
+      "category": "Xác thực & Người dùng",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 15.34,
+      "detail": "Updated profile",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/v1/auth/register",
+      "category": "Xác thực & Người dùng",
+      "status_code": 429,
+      "success": false,
+      "latency_ms": 92.26,
+      "detail": "New user: testuser_1793165497@example.com",
+      "error": "{\"detail\":\"Quá nhiều yêu cầu. Vui lòng thử lại sau 120 giây.\"}"
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/v1/admin/dashboard-stats",
+      "category": "Quản trị Admin",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 18.3,
+      "detail": "Stats retrieved (CPU/RAM/DB/Cache)",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/v1/admin/users",
+      "category": "Quản trị Admin",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 11.1,
+      "detail": "Total users: 5",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/v1/admin/users",
+      "category": "Quản trị Admin",
+      "status_code": 201,
+      "success": true,
+      "latency_ms": 331.51,
+      "detail": "Created ID: 7",
+      "error": ""
+    },
+    {
+      "method": "PUT",
+      "endpoint": "/api/v1/admin/users/{user_id}",
+      "category": "Quản trị Admin",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 15.71,
+      "detail": "Updated ID: 7",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/v1/admin/users/{user_id}/reset-password",
+      "category": "Quản trị Admin",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 323.35,
+      "detail": "Reset pass for ID: 7",
+      "error": ""
+    },
+    {
+      "method": "DELETE",
+      "endpoint": "/api/v1/admin/users/{user_id}",
+      "category": "Quản trị Admin",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 15.38,
+      "detail": "Deleted ID: 7",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files/crs-presets",
+      "category": "Tiền xử lý SEG-Y",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 5.38,
+      "detail": "Total presets: 13 (incl. 3 Louisiana zones)",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/segy-files/inspect-header",
+      "category": "Tiền xử lý SEG-Y",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 287.0,
+      "detail": "Detected CRS: EPSG:26782",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/segy-files/upload",
+      "category": "Tiền xử lý SEG-Y",
+      "status_code": 201,
+      "success": true,
+      "latency_ms": 121.53,
+      "detail": "Task ID: 0948b0dbfb1f444c819c8458876f9a67, File ID: None",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files/tasks/{task_id}",
+      "category": "Tiền xử lý SEG-Y",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 5.43,
+      "detail": "Status: PROCESSING",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files",
+      "category": "Dữ liệu Địa chấn",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 55.67,
+      "detail": "Files in DB: 7 (Selected ID: 14)",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files/{file_id}/summary",
+      "category": "Dữ liệu Địa chấn",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 15.67,
+      "detail": "File 14 summary OK",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files/{file_id}/processed/summary",
+      "category": "Dữ liệu Địa chấn",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 6.7,
+      "detail": "Trace count: 50",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files/{file_id}/processed/line",
+      "category": "Dữ liệu Địa chấn",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 16.4,
+      "detail": "Geometry: LineString",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files/{file_id}/processed/lines",
+      "category": "Dữ liệu Địa chấn",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 15.13,
+      "detail": "Features: 1",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files/{file_id}/processed/shot-points",
+      "category": "Dữ liệu Địa chấn",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 10.56,
+      "detail": "Points: 10",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files/{file_id}/processed/traces",
+      "category": "Dữ liệu Địa chấn",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 14.55,
+      "detail": "Traces: 10",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files/{file_id}/download-url",
+      "category": "Dữ liệu Địa chấn",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 56.96,
+      "detail": "MinIO presigned URL generated",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files/mvt/{z}/{x}/{y}.pbf",
+      "category": "Vector Tiles & Không gian",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 4.09,
+      "detail": "MVT bytes: 0",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/segy-files/{file_id}/mvt/{z}/{x}/{y}.pbf",
+      "category": "Vector Tiles & Không gian",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 11.24,
+      "detail": "File MVT bytes: 0",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/segy-files/{file_id}/processed/lines/clip",
+      "category": "Vector Tiles & Không gian",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 109.82,
+      "detail": "Clipped features: 1",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/segy-files/lines/clip-batch",
+      "category": "Vector Tiles & Không gian",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 46.43,
+      "detail": "Batch clip OK",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/segy-files/{file_id}/export/csv",
+      "category": "Xuất dữ liệu",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 30.54,
+      "detail": "CSV content: 668 bytes",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/segy-files/export/csv/batch",
+      "category": "Xuất dữ liệu",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 83.08,
+      "detail": "Batch CSV generated: 1 files",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/segy-files/export/segy/spatial-filter",
+      "category": "Xuất dữ liệu",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 484.82,
+      "detail": "Spatial filtered SEG-Y exported (1 lines)",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/blocks",
+      "category": "Lô mỏ địa chấn",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 9.41,
+      "detail": "Total blocks: 0",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/blocks/geojson",
+      "category": "Lô mỏ địa chấn",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 9.5,
+      "detail": "Features: 0",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/blocks/upload-zip",
+      "category": "Lô mỏ địa chấn",
+      "status_code": 400,
+      "success": true,
+      "latency_ms": 64.83,
+      "detail": "Validation handled properly (400)",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/blocks/tasks/{task_id}",
+      "category": "Lô mỏ địa chấn",
+      "status_code": 404,
+      "success": true,
+      "latency_ms": 4.03,
+      "detail": "Task check endpoint responded properly (404/200)",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/blocks/{block_id}",
+      "category": "Lô mỏ địa chấn",
+      "status_code": 404,
+      "success": true,
+      "latency_ms": 8.02,
+      "detail": "Handled correctly (404)",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/blocks/{block_id}/export-excel",
+      "category": "Lô mỏ địa chấn",
+      "status_code": 404,
+      "success": true,
+      "latency_ms": 12.83,
+      "detail": "Handled correctly (404)",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/blocks/undo-split",
+      "category": "Lô mỏ địa chấn",
+      "status_code": 404,
+      "success": true,
+      "latency_ms": 61.33,
+      "detail": "Handled safely (404)",
+      "error": ""
+    },
+    {
+      "method": "DELETE",
+      "endpoint": "/api/blocks",
+      "category": "Lô mỏ địa chấn",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 18.72,
+      "detail": "Delete by source_file OK",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/segy-files/batch-delete",
+      "category": "Thao tác hàng loạt",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 57.57,
+      "detail": "Batch delete handled (ID: 999999)",
+      "error": ""
+    },
+    {
+      "method": "GET",
+      "endpoint": "/api/health",
+      "category": "Sức khỏe hệ thống",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 3.86,
+      "detail": "Data serving: ok",
+      "error": ""
+    },
+    {
+      "method": "POST",
+      "endpoint": "/api/v1/auth/logout",
+      "category": "Xác thực & Người dùng",
+      "status_code": 200,
+      "success": true,
+      "latency_ms": 14.07,
+      "detail": "Logged out successfully",
+      "error": ""
+    }
+  ]
+}
